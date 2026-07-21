@@ -124,8 +124,8 @@ function buildNav() {
   const nav = document.getElementById("nav");
   let html = `<div class="nav-section-label">Geral</div>`;
   html += navItemHtml("#/total", "Geral API Total", "#1f5fa8");
-  html += navItemHtml("#/devolucoes/total", "Devoluções", "#d03b3b");
-  html += navItemHtml("#/cortes/total", "Cortes", "#8a5a3b");
+  html += navItemHtml("#/devolucoes/total", "Devoluções Geral", "#d03b3b");
+  html += navItemHtml("#/cortes/total", "Cortes Geral", "#8a5a3b");
   html += `<div class="nav-section-label">Supervisores</div>`;
   html += DATA.supervisores.map(s => navItemHtml(`#/sup/${s.codigo}`, s.nome, s.cor)).join("");
   nav.innerHTML = html;
@@ -171,11 +171,11 @@ function render() {
       renderSupervisorPage(view, sup);
     }
   } else if (parts[0] === "devolucoes" && parts[1] === "total") {
-    setActiveNav("#/devolucoes/total"); title.textContent = "Devoluções";
-    renderDevolucoesGeralPage(view, "Devoluções", DATA.devolucoes.geral);
+    setActiveNav("#/devolucoes/total"); title.textContent = "Devoluções Geral";
+    renderDevolucoesGeralPage(view, "Devoluções Geral", DATA.devolucoes.geral);
   } else if (parts[0] === "cortes" && parts[1] === "total") {
-    setActiveNav("#/cortes/total"); title.textContent = "Cortes";
-    renderCortesGeralPage(view, "Cortes", DATA.cortes.geral);
+    setActiveNav("#/cortes/total"); title.textContent = "Cortes Geral";
+    renderCortesGeralPage(view, "Cortes Geral", DATA.cortes.geral);
   } else {
     view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`;
   }
