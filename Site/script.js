@@ -462,9 +462,22 @@ function fornecedorValorTable(grupos, label) {
   return `<div class="table-scroll"><table><thead><tr><th>Fornecedor</th><th class="num">${esc(label)}</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="2" class="empty-state">Sem itens</td></tr>`}</tbody></table></div>`;
 }
+function vendedorValorTable(grupos, label) {
+  const porVendedor = {};
+  grupos.forEach(g => {
+    const key = g.vendedor || "—";
+    if (!porVendedor[key]) porVendedor[key] = { valor: 0, pedidos: 0 };
+    porVendedor[key].valor += g.valorTotal;
+    porVendedor[key].pedidos++;
+  });
+  const rows = Object.entries(porVendedor).sort((a,b)=>b[1].valor-a[1].valor)
+    .map(([v,d]) => `<tr><td>${esc(v)}</td><td class="num">${fmtInt(d.pedidos)}</td><td class="num">${fmtBRL2(d.valor)}</td></tr>`).join("");
+  return `<div class="table-scroll"><table><thead><tr><th>Vendedor</th><th class="num">Pedidos</th><th class="num">${esc(label)}</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="3" class="empty-state">Sem itens</td></tr>`}</tbody></table></div>`;
+}
 function renderDevolucoesTab(body, codigo, nome) {
   const bloco = DATA.devolucoes.porSupervisor.find(s => s.codigo === codigo);
-  renderGrupoESearch(body, "Devolução total — " + nome, bloco, { showSupervisor: false, fornecedorLabel: "Valor devolvido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA)" });
+  renderGrupoESearch(body, "Devolução total — " + nome, bloco, { showSupervisor: false, showVendedor: true, fornecedorLabel: "Valor devolvido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA)" });
 }
 function renderDevolucoesGeralPage(view, titulo, bloco) {
   renderGrupoESearch(view, titulo, bloco, { showSupervisor: true, fornecedorLabel: "Valor devolvido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA, supervisor)" });
@@ -486,7 +499,7 @@ function renderCortesTab(body, codigo, nome) {
     <div class="card">${cortesProdutosTable()}</div>
     <div id="cortesGrupoSlot"></div>
   `;
-  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: false, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: `Detalhamento (produto, pedido, valor) — ${nome}`, skipKpi: true });
+  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: false, showVendedor: true, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: `Detalhamento (produto, pedido, valor) — ${nome}`, skipKpi: true });
 }
 
 // Renderiza KPI (opcional) + tabela "Por Fornecedor" + busca + tabela agrupada com accordion,
@@ -497,8 +510,16 @@ function renderGrupoESearch(container, kpiLabel, bloco, opts) {
   const searchId = "search-" + Math.random().toString(36).slice(2, 9);
   container.innerHTML = `
     ${opts.skipKpi ? "" : `<div class="kpi-grid">${kpiCard(kpiLabel, fmtBRL2(bloco ? bloco.valorTotal : 0), `${grupos.length} pedido(s) no mês`)}</div>`}
-    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
-    <div class="card">${fornecedorValorTable(grupos, opts.fornecedorLabel)}</div>
+    ${opts.showVendedor ? `
+      <div class="section-title"><span class="bar"></span>Por Fornecedor e por Vendedor</div>
+      <div class="grid-2">
+        <div class="card">${fornecedorValorTable(grupos, opts.fornecedorLabel)}</div>
+        <div class="card">${vendedorValorTable(grupos, opts.fornecedorLabel)}</div>
+      </div>
+    ` : `
+      <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
+      <div class="card">${fornecedorValorTable(grupos, opts.fornecedorLabel)}</div>
+    `}
     <div class="section-title"><span class="bar"></span>${opts.detailTitle}</div>
     <p class="hint">Clique numa linha para ver os produtos daquele pedido.</p>
     <div class="card" id="${searchId}-card">${searchBoxHtml(searchId)}${grupoTable(grupos, opts)}</div>
