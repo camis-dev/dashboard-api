@@ -7,6 +7,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $basesPath = Join-Path $root "Bases"
 $sitePath = Join-Path $root "Site"
 $ritmoPath = Join-Path $root "Ritmo"
+$consultaPath = Join-Path $root "Consulta"
 
 function Remove-Diacritics([string]$s) {
     if (-not $s) { return $s }
@@ -17,6 +18,20 @@ function Remove-Diacritics([string]$s) {
         if ($cat -ne [Globalization.UnicodeCategory]::NonSpacingMark) { [void]$sb.Append($ch) }
     }
     return $sb.ToString().Normalize([Text.NormalizationForm]::FormC)
+}
+
+# Na base 8022 as colunas VALOR R$ NF e UNIDADES VENDIDAS vem como TEXTO formatado em
+# pt-BR ("1.251,00"), nao como numero (Value2 retorna string em vez de double para
+# praticamente todas as linhas) - diferente da 8014, onde essas colunas eram numericas.
+# [double]"1.251,00" falha (o parser nao sabe que "." e separador de milhar aqui), entao
+# converte manualmente antes de castar.
+function Parse-ValorBR($v) {
+    if ($v -is [double]) { return $v }
+    if (-not $v -or "$v" -eq "") { return 0.0 }
+    $s = "$v".Trim().Replace(".", "").Replace(",", ".")
+    $out = 0.0
+    if ([double]::TryParse($s, [Globalization.NumberStyles]::Any, [Globalization.CultureInfo]::InvariantCulture, [ref]$out)) { return $out }
+    return 0.0
 }
 
 Write-Host "Abrindo Excel..."
@@ -168,10 +183,15 @@ $supervisoresInfo = [ordered]@{
 $residuaisInterno = @("63","64","68","87")
 
 # ---------------------------------------------------------------------------
-# 5. Base 8014 - Geral (linhas de venda)
+# 5. Base 8022 - Geral (linhas de venda) - substituiu a 8014 em 2026-07-21.
+# Mesmas informacoes da 8014 + STATUS PEDIDO (igual ao antigo "A FATURAR") e STATUS
+# BLOQUEIO (novo - status operacional do pedido: PENDENTE/LIBERADO/MONTADO/FATURADO/
+# BLOQUEADO/DEVOLVIDO). Colunas deslocadas em relacao a 8014: tem "FILIAL" a mais no
+# inicio (+1) e "STATUS BLOQUEIO" a mais entre ORIGEM_PEDIDO e COD.VENDEDOR (+1), e
+# CAIXAS VENDIDAS/UNIDADES VENDIDAS vem trocadas de ordem entre si.
 # ---------------------------------------------------------------------------
-Write-Host "Lendo base 8014 - Geral (pode demorar)..."
-$wb8 = $excel.Workbooks.Open((Join-Path $basesPath "8014 - Geral.xls"), $null, $true)
+Write-Host "Lendo base 8022 - Geral (pode demorar)..."
+$wb8 = $excel.Workbooks.Open((Join-Path $basesPath "8022 - geral.xls"), $null, $true)
 $ws8 = $wb8.Worksheets.Item(1)
 $rows8 = $ws8.UsedRange.Rows.Count
 $arr8 = $ws8.UsedRange.Value2
@@ -180,7 +200,7 @@ Write-Host "  $($rows8-1) linhas"
 # Descobre o mes vigente (maior data encontrada) para filtrar a janela movel do export
 $maxDate = [datetime]::MinValue
 for ($r = 2; $r -le $rows8; $r++) {
-    $v = $arr8[$r,1]
+    $v = $arr8[$r,2]
     if ($v -is [double]) {
         $d = [datetime]::FromOADate($v)
         if ($d -gt $maxDate) { $maxDate = $d }
@@ -197,8 +217,8 @@ Write-Host "  Periodo vigente: $($primeiroDiaMes.ToString('MM/yyyy')) (dados ate
 Write-Host "Resolvendo supervisor de cada vendedor (votacao por maioria como fallback)..."
 $votos = @{}
 for ($r = 2; $r -le $rows8; $r++) {
-    $cvv = $arr8[$r,15]
-    $css = $arr8[$r,17]
+    $cvv = $arr8[$r,17]
+    $css = $arr8[$r,19]
     if (-not ($cvv -is [double]) -or -not ($css -is [double])) { continue }
     $cv = "$([int]$cvv)"
     $cs = "$([int]$css)"
@@ -227,25 +247,26 @@ Write-Host "Processando linhas..."
 $linhas = New-Object System.Collections.Generic.List[object]
 
 for ($r = 2; $r -le $rows8; $r++) {
-    $vData = $arr8[$r,1]
+    $vData = $arr8[$r,2]
     if (-not ($vData -is [double])) { continue }
     $data = [datetime]::FromOADate($vData)
     if ($data -lt $primeiroDiaMes -or $data -gt $ultimoDiaMes) { continue }
 
-    $codCliente = "$($arr8[$r,2])"
-    $nomeCliente = "$($arr8[$r,3])"
-    $cnpj = "$($arr8[$r,4])"
-    $segmento = "$($arr8[$r,5])"
-    $numPedRCA = "$($arr8[$r,10])"
-    $numPedWinthor = "$($arr8[$r,9])"
-    $statusFat = Remove-Diacritics("$($arr8[$r,14])").ToUpper().Trim()
-    $codVendedor = "$([int]$arr8[$r,15])"
-    $nomeVendedor = "$($arr8[$r,16])"
-    $codprod = "$($arr8[$r,22])"
-    $descProduto = "$($arr8[$r,23])"
-    $unidVendidas = [double]$arr8[$r,24]
-    $valor = [double]$arr8[$r,29]
-    $tipoVenda = Remove-Diacritics("$($arr8[$r,30])").ToUpper().Trim()
+    $codCliente = "$($arr8[$r,3])"
+    $nomeCliente = "$($arr8[$r,4])"
+    $cnpj = "$($arr8[$r,5])"
+    $segmento = "$($arr8[$r,6])"
+    $numPedRCA = "$($arr8[$r,11])"
+    $numPedWinthor = "$($arr8[$r,10])"
+    $statusFat = Remove-Diacritics("$($arr8[$r,15])").ToUpper().Trim()
+    $statusBloqueio = Remove-Diacritics("$($arr8[$r,16])").ToUpper().Trim()
+    $codVendedor = "$([int]$arr8[$r,17])"
+    $nomeVendedor = "$($arr8[$r,18])"
+    $codprod = "$($arr8[$r,24])"
+    $descProduto = "$($arr8[$r,25])"
+    $unidVendidas = Parse-ValorBR $arr8[$r,27]
+    $valor = Parse-ValorBR $arr8[$r,31]
+    $tipoVenda = Remove-Diacritics("$($arr8[$r,32])").ToUpper().Trim()
 
     # Bucketing de vendas/devolucao/corte usa o supervisor DA PROPRIA LINHA (so com os folds
     # numericos ja conhecidos: Denilson->Washington, Rodrigo Stelleo->Rodrigo) - nao o
@@ -257,7 +278,7 @@ for ($r = 2; $r -le $rows8; $r++) {
     # o que o dashboard soma. O canonico (vendedorSupervisorFinal) continua existindo e e usado
     # só para decidir quem recebe a META do vendedor (evita o double-count que motivou criar
     # o canonico originalmente) - ver o loop de metas mais abaixo.
-    $codSupervisorRawVal = $arr8[$r,17]
+    $codSupervisorRawVal = $arr8[$r,19]
     $codSupervisor = "OUTROS"
     if ($codSupervisorRawVal -is [double]) {
         $csFolded = "$([int]$codSupervisorRawVal)"
@@ -280,6 +301,7 @@ for ($r = 2; $r -le $rows8; $r++) {
         NumPedRCA = $numPedRCA
         NumPedWinthor = $numPedWinthor
         StatusFat = $statusFat
+        StatusBloqueio = $statusBloqueio
         CodVendedor = $codVendedor
         NomeVendedor = $nomeVendedor.Trim()
         CodSupervisor = $codSupervisor
@@ -430,6 +452,7 @@ foreach ($l in $linhas) {
                 cnpj = $l.CNPJ
                 razaoSocial = $l.NomeCliente
                 status = $l.StatusFat
+                statusBloqueio = $l.StatusBloqueio
                 valor = 0.0
             }
         }
@@ -565,12 +588,12 @@ foreach ($l in $corteLinhas) {
         $g.produtos.Add([ordered]@{ codProduto = $l.CodProd; produto = $l.DescProduto; fornecedor = $l.Fornecedor; status = $l.StatusFat; valor = $valorL })
     }
     if (-not $corteConsumoProduto.ContainsKey($l.CodProd)) {
-        $ci = $corteInfo[$l.CodProd]
+        $ciTmp = $corteInfo[$l.CodProd]
         $corteConsumoProduto[$l.CodProd] = [ordered]@{
             produto = $l.DescProduto
-            categoria = $ci.categoria
+            categoria = $ciTmp.categoria
             fornecedor = $l.Fornecedor
-            alocado = $ci.alocado
+            alocado = $ciTmp.alocado
             vendidoUnid = 0.0
             valor = 0.0
         }
@@ -578,6 +601,34 @@ foreach ($l in $corteLinhas) {
     $corteConsumoProduto[$l.CodProd].valor = [Math]::Round($corteConsumoProduto[$l.CodProd].valor + $l.Valor,2)
     $corteConsumoProduto[$l.CodProd].vendidoUnid += $l.UnidVendidas
 }
+
+# ---------------------------------------------------------------------------
+# 8b. Consulta de Pedidos (status operacional - novo na 8022, para vendedores
+# consultarem rapidamente o andamento de qualquer pedido da empresa toda).
+# Mesmo agrupamento cliente+pedido, mas cobre TODAS as vendas (nao so fornecedor
+# API ou itens de corte) e carrega STATUS BLOQUEIO por produto - a informacao
+# principal que o vendedor quer ver (PENDENTE/LIBERADO/MONTADO/FATURADO/
+# BLOQUEADO/DEVOLVIDO), alem do STATUS PEDIDO (Faturado/A Faturar) ja usado
+# no resto do site.
+# ---------------------------------------------------------------------------
+Write-Host "Montando consulta de pedidos..."
+$consultaLinhas = $linhas | Where-Object { $_.TipoVenda -eq "VENDA" }
+$consultaGrupos = @{}
+foreach ($l in $consultaLinhas) {
+    $cs = $l.CodSupervisor
+    $nomeSupQ = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
+    $g = Get-Or-NovoGrupo $consultaGrupos $l $nomeSupQ
+    $g.valorTotal = [Math]::Round($g.valorTotal + $l.Valor, 2)
+    $g.produtos.Add([ordered]@{
+        codProduto = $l.CodProd
+        produto = $l.DescProduto
+        fornecedor = $l.Fornecedor
+        statusPedido = $l.StatusFat
+        statusBloqueio = $l.StatusBloqueio
+        valor = [Math]::Round($l.Valor,2)
+    })
+}
+Write-Host "  $($consultaGrupos.Count) pedidos distintos no mes"
 
 # ---------------------------------------------------------------------------
 # 9. Periodo / dias uteis (para o Ritmo)
@@ -693,6 +744,7 @@ $dataJson = [ordered]@{
     supervisores = $supervisoresOut
     devolucoes = $devolucoesOut
     cortes = $cortesOut
+    consultaPedidos = Grupos-ParaSaida $consultaGrupos
     outrosItensValor = [Math]::Round($outrosValor,2)
 }
 
@@ -712,7 +764,7 @@ Write-Host "OK: Site/data.json e Site/data.js gerados ($([Math]::Round((Get-Item
 # (data.js, script.js, style.css) em cada index.html - nao so data.js, senao uma mudanca no
 # script/CSS fica presa em cache do navegador enquanto os dados atualizam normalmente.
 $buildVersion = Get-Date -Format "yyyyMMddHHmmss"
-foreach ($idxFile in @((Join-Path $sitePath "index.html"), (Join-Path $ritmoPath "index.html"))) {
+foreach ($idxFile in @((Join-Path $sitePath "index.html"), (Join-Path $ritmoPath "index.html"), (Join-Path $consultaPath "index.html"), (Join-Path $root "index.html"))) {
     $content = Get-Content -Path $idxFile -Raw -Encoding UTF8
     $content = $content -replace '((?:data|script|style)\.(?:js|css))\?v=\d+', "`$1?v=$buildVersion"
     Set-Content -Path $idxFile -Value $content -Encoding UTF8 -NoNewline
