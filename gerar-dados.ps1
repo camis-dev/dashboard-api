@@ -661,16 +661,17 @@ Set-Content -Path (Join-Path $sitePath "data.json") -Value $json -Encoding UTF8
 Set-Content -Path (Join-Path $sitePath "data.js") -Value "window.DASHBOARD_DATA = $json;" -Encoding UTF8
 Write-Host "OK: Site/data.json e Site/data.js gerados ($([Math]::Round((Get-Item (Join-Path $sitePath 'data.json')).Length/1KB,1)) KB)"
 
-# Cache-busting: o GitHub Pages serve data.js com Cache-Control max-age=600, entao o
-# navegador pode mostrar dados de 10 minutos atras mesmo depois de publicar uma atualizacao.
-# Atualiza a query string "?v=" do <script src="data.js?v=...">  em cada index.html para o
-# navegador sempre buscar o arquivo novo.
+# Cache-busting: o GitHub Pages serve estes arquivos com Cache-Control max-age=600, entao o
+# navegador pode mostrar codigo/dados de ate 10 minutos atras mesmo depois de publicar uma
+# atualizacao. Atualiza a query string "?v=" de TODOS os arquivos locais versionados
+# (data.js, script.js, style.css) em cada index.html - nao so data.js, senao uma mudanca no
+# script/CSS fica presa em cache do navegador enquanto os dados atualizam normalmente.
 $buildVersion = Get-Date -Format "yyyyMMddHHmmss"
 foreach ($idxFile in @((Join-Path $sitePath "index.html"), (Join-Path $ritmoPath "index.html"))) {
     $content = Get-Content -Path $idxFile -Raw -Encoding UTF8
-    $content = $content -replace 'data\.js\?v=\d+', "data.js?v=$buildVersion"
+    $content = $content -replace '((?:data|script|style)\.(?:js|css))\?v=\d+', "`$1?v=$buildVersion"
     Set-Content -Path $idxFile -Value $content -Encoding UTF8 -NoNewline
 }
-Write-Host "OK: cache-buster atualizado para v=$buildVersion"
+Write-Host "OK: cache-buster atualizado para v=$buildVersion (data.js, script.js, style.css)"
 
 Write-Host "Concluido."
