@@ -50,6 +50,8 @@ function buildNav() {
   html += navItemHtml("#/devolucoes/total", "Devoluções Geral API", "#d03b3b");
   html += navItemHtml("#/devolucoes/as", "Devoluções AS", "#a34a8f");
   html += navItemHtml("#/devolucoes/varejo", "Devoluções Varejo", "#c9752f");
+  html += `<div class="nav-section-label">Cortes</div>`;
+  html += navItemHtml("#/cortes/total", "Cortes Geral API", "#8a5a3b");
   nav.innerHTML = html;
   nav.querySelectorAll(".nav-item").forEach(el => {
     el.addEventListener("click", () => { location.hash = el.dataset.hash; document.getElementById("sidebar").classList.remove("open"); });
@@ -106,6 +108,9 @@ function render() {
     if (!cfg) { view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`; return; }
     setActiveNav(cfg[0]); title.textContent = cfg[1];
     renderDevolucoesGeralPage(view, cfg[1], cfg[2]);
+  } else if (parts[0] === "cortes" && parts[1] === "total") {
+    setActiveNav("#/cortes/total"); title.textContent = "Cortes Geral API";
+    renderCortesGeralPage(view, "Cortes Geral API", DATA.cortes.geral);
   } else {
     view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`;
   }
@@ -364,6 +369,21 @@ function renderDevolucoesGeralPage(view, titulo, bloco) {
   `;
 }
 
+function renderCortesGeralPage(view, titulo, bloco) {
+  const itens = bloco ? bloco.itens : [];
+  view.innerHTML = `
+    <div class="kpi-grid">
+      ${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} pedidos no mês`)}
+    </div>
+    <div class="section-title"><span class="bar"></span>Alocação por Produto (risco de corte)</div>
+    <div class="card">${cortesProdutosTable()}</div>
+    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
+    <div class="card">${fornecedorValorTable(itens, "Valor vendido")}</div>
+    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA, supervisor)</div>
+    <div class="card">${cortesTable(itens, { showSupervisor: true })}</div>
+  `;
+}
+
 function renderCortesTab(body, codigo, nome) {
   const bloco = DATA.cortes.porSupervisor.find(s => s.codigo === codigo);
   const itens = bloco ? bloco.itens : [];
@@ -393,17 +413,19 @@ function cortesProdutosTable() {
   </tr></thead><tbody>${rows}</tbody></table></div>
   <p class="hint" style="margin-top:8px">Mostrando os 40 produtos de maior valor vendido dentre os ${DATA.cortes.produtos.length} itens de alocação controlada. % consumido acima de 100% indica que a venda já superou a alocação de referência — risco de corte no restante do mês.</p>`;
 }
-function cortesTable(itens) {
+function cortesTable(itens, opts = {}) {
   if (!itens.length) return `<p class="empty-state">Nenhum pedido com produto de corte no mês.</p>`;
+  const showSup = opts.showSupervisor;
   const rows = itens.map(i => `<tr>
     <td>${fmtDate(i.data)}</td><td>${esc(i.codigoRCA)}</td><td>${esc(i.codCliente)}</td><td>${esc(i.cnpj)}</td>
     <td>${esc(i.razaoSocial)}</td><td>${esc(i.produto)}</td>
-    <td>${esc(i.fornecedor||"—")}</td><td>${esc(i.vendedor)}</td>
+    <td>${esc(i.fornecedor||"—")}</td>${showSup ? `<td>${esc(i.supervisor)}</td>` : ""}<td>${esc(i.vendedor)}</td>
     <td><span class="status-pill ${i.status==='FATURADO'?'status-faturado':'status-afaturar'}">${i.status==='FATURADO'?'Faturado':'A Faturar'}</span></td>
     <td class="num">${fmtBRL2(i.valor)}</td>
   </tr>`).join("");
   return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th><th>Vendedor</th><th>Status</th><th class="num">Valor</th>
+    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th>
+    ${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th>Status</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 

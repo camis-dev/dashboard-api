@@ -535,12 +535,12 @@ foreach ($l in $devLinhas) {
 Write-Host "Montando cortes..."
 $corteLinhas = $linhas | Where-Object { $_.TipoVenda -eq "VENDA" -and $corteInfo.ContainsKey($_.CodProd) }
 $cortePorSup = @{}
+$corteGeralItens = New-Object System.Collections.Generic.List[object]
 $corteConsumoProduto = @{}
 foreach ($l in $corteLinhas) {
     $cs = $l.CodSupervisor
     $nomeSupC = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
-    if (-not $cortePorSup.ContainsKey($cs)) { $cortePorSup[$cs] = New-Object System.Collections.Generic.List[object] }
-    $cortePorSup[$cs].Add([ordered]@{
+    $itemCorte = [ordered]@{
         data = $l.Data.ToString("yyyy-MM-dd")
         codigoRCA = $l.NumPedRCA
         codCliente = $l.CodCliente
@@ -552,7 +552,10 @@ foreach ($l in $corteLinhas) {
         vendedor = $l.NomeVendedor
         status = $l.StatusFat
         valor = [Math]::Round($l.Valor,2)
-    })
+    }
+    if (-not $cortePorSup.ContainsKey($cs)) { $cortePorSup[$cs] = New-Object System.Collections.Generic.List[object] }
+    $cortePorSup[$cs].Add($itemCorte)
+    $corteGeralItens.Add($itemCorte)
     if (-not $corteConsumoProduto.ContainsKey($l.CodProd)) {
         $ci = $corteInfo[$l.CodProd]
         $corteConsumoProduto[$l.CodProd] = [ordered]@{
@@ -651,6 +654,10 @@ foreach ($cs in $devPorSup.Keys) {
 $cortesOut = [ordered]@{
     valorTotal = [Math]::Round(($corteLinhas | Measure-Object -Property Valor -Sum).Sum,2)
     produtos = @($corteConsumoProduto.Values | Sort-Object valor -Descending)
+    geral = [ordered]@{
+        valorTotal = [Math]::Round(($corteLinhas | Measure-Object -Property Valor -Sum).Sum,2)
+        itens = @($corteGeralItens | Sort-Object data -Descending)
+    }
     porSupervisor = New-Object System.Collections.Generic.List[object]
 }
 foreach ($cs in $cortePorSup.Keys) {
