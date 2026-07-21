@@ -331,7 +331,7 @@ function Add-Linha($agg, $linha) {
 function ConvertTo-JsonAgg($agg) {
     $out = [ordered]@{
         metaFaturamento = [Math]::Round($agg.metaFaturamento,2)
-        metaPositivacao = $agg.metaPositivacao
+        metaPositivacao = [Math]::Round($agg.metaPositivacao)
         faturadoLiquido = [Math]::Round($agg.faturado - $agg.devolucao,2)
         aFaturar = [Math]::Round($agg.aFaturar,2)
         devolucao = [Math]::Round($agg.devolucao,2)
@@ -343,7 +343,7 @@ function ConvertTo-JsonAgg($agg) {
         $b = $agg.porFornecedor[$fid]
         $out.porFornecedor[$fid] = [ordered]@{
             metaFaturamento = [Math]::Round($b.metaFaturamento,2)
-            metaPositivacao = $b.metaPositivacao
+            metaPositivacao = [Math]::Round($b.metaPositivacao)
             faturadoLiquido = [Math]::Round($b.faturado - $b.devolucao,2)
             aFaturar = [Math]::Round($b.aFaturar,2)
             devolucao = [Math]::Round($b.devolucao,2)
@@ -425,6 +425,39 @@ foreach ($cs in $supAgg.Keys) {
             }
         }
     }
+}
+
+# A planilha de metas nao quebra a meta por segmento de cliente (AS/Varejo) - so por
+# vendedor. Para nao mostrar "Meta R$ 0" no Geral AS/Varejo, a meta geral (e de cada
+# fornecedor) e rateada proporcionalmente a representatividade de cada segmento no
+# realizado do mes (projetado = faturado + a faturar, mesma logica de "Est. dia" que
+# a base de vendas ja usa) - faturamento pelo projetado, positivacao pelos clientes ja
+# positivados. Se um segmento ainda nao tiver nenhum realizado no fornecedor, cai 50/50.
+function Split-MetaPorSegmento($totalMeta, $realizadoAS, $realizadoVarejo) {
+    $soma = $realizadoAS + $realizadoVarejo
+    if ($soma -gt 0) {
+        $shareAS = $realizadoAS / $soma
+    } else {
+        $shareAS = 0.5
+    }
+    return @{ AS = $totalMeta * $shareAS; Varejo = $totalMeta * (1 - $shareAS) }
+}
+$splitGeral = Split-MetaPorSegmento $totalGeral.metaFaturamento ($geralAS.faturado + $geralAS.aFaturar) ($geralVarejo.faturado + $geralVarejo.aFaturar)
+$geralAS.metaFaturamento = $splitGeral.AS
+$geralVarejo.metaFaturamento = $splitGeral.Varejo
+$splitPos = Split-MetaPorSegmento $totalGeral.metaPositivacao $geralAS.clientesVenda.Count $geralVarejo.clientesVenda.Count
+$geralAS.metaPositivacao = $splitPos.AS
+$geralVarejo.metaPositivacao = $splitPos.Varejo
+foreach ($fid in $fornecedores.Keys) {
+    $bTotal = Get-FornBucket $totalGeral $fid
+    $bAS = Get-FornBucket $geralAS $fid
+    $bVarejo = Get-FornBucket $geralVarejo $fid
+    $sf = Split-MetaPorSegmento $bTotal.metaFaturamento ($bAS.faturado + $bAS.aFaturar) ($bVarejo.faturado + $bVarejo.aFaturar)
+    $bAS.metaFaturamento = $sf.AS
+    $bVarejo.metaFaturamento = $sf.Varejo
+    $sp = Split-MetaPorSegmento $bTotal.metaPositivacao $bAS.clientesVenda.Count $bVarejo.clientesVenda.Count
+    $bAS.metaPositivacao = $sp.AS
+    $bVarejo.metaPositivacao = $sp.Varejo
 }
 
 # ---------------------------------------------------------------------------
