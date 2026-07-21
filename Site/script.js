@@ -182,21 +182,23 @@ function fornecedorBars(agg) {
 
 function fornecedorTable(agg) {
   const rows = DATA.fornecedores.map(f => {
-    const b = agg.porFornecedor[f.id] || { metaFaturamento: 0, faturadoLiquido: 0, aFaturar: 0, positivacaoRealizado: 0, metaPositivacao: 0, devolucao: 0, bonificacao: 0 };
+    const b = agg.porFornecedor[f.id] || { metaFaturamento: 0, faturadoLiquido: 0, aFaturar: 0, positivacaoRealizado: 0, metaPositivacao: 0, positivacaoFaturado: 0, positivacaoAFaturar: 0, devolucao: 0, bonificacao: 0 };
     const p = pct(b.faturadoLiquido, b.metaFaturamento);
+    const pProj = pct(b.faturadoLiquido + b.aFaturar, b.metaFaturamento);
     return `<tr>
       <td><span class="forn-bar-dot" style="background:${f.cor};display:inline-block;margin-right:6px"></span>${esc(f.nome)}</td>
       <td class="num">${fmtBRL2(b.metaFaturamento)}</td>
       <td class="num">${fmtBRL2(b.faturadoLiquido)}</td>
       <td class="num">${fmtBRL2(b.aFaturar)}</td>
+      <td class="num">${fmtBRL2(b.faturadoLiquido + b.aFaturar)}<br><span style="font-size:10.5px;color:var(--ink-muted)">${pProj}% da meta</span></td>
       <td class="num">${p}%</td>
-      <td class="num">${fmtInt(b.positivacaoRealizado)} / ${fmtInt(b.metaPositivacao)}</td>
+      <td class="num">${fmtInt(b.positivacaoRealizado)} / ${fmtInt(b.metaPositivacao)}<br><span style="font-size:10.5px;color:var(--ink-muted)">${fmtInt(b.positivacaoFaturado)}F · ${fmtInt(b.positivacaoAFaturar)}AF</span></td>
       <td class="num">${b.devolucao ? fmtBRL2(b.devolucao) : "—"}</td>
     </tr>`;
   }).join("");
   return `<div class="table-scroll"><table class="forn-summary-table"><thead><tr>
     <th>Fornecedor</th><th class="num">Meta</th><th class="num">Faturado líq.</th><th class="num">A Faturar</th>
-    <th class="num">% Meta</th><th class="num">Positivação</th><th class="num">Devolução</th>
+    <th class="num">Projetado</th><th class="num">% Meta</th><th class="num">Positivação</th><th class="num">Devolução</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
