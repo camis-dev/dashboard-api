@@ -247,8 +247,23 @@ for ($r = 2; $r -le $rows8; $r++) {
     $valor = [double]$arr8[$r,29]
     $tipoVenda = Remove-Diacritics("$($arr8[$r,30])").ToUpper().Trim()
 
+    # Bucketing de vendas/devolucao/corte usa o supervisor DA PROPRIA LINHA (so com os folds
+    # numericos ja conhecidos: Denilson->Washington, Rodrigo Stelleo->Rodrigo) - nao o
+    # "canonico" por vendedor. Motivo (achado 2026-07-21): vendedor 260 tem TODAS as devolucoes
+    # do mes marcadas com supervisor=Arildo na base, mas a maioria das vendas marcadas com
+    # Alessandro (parece transferencia no meio do mes) - usar o canonico pra bucketing jogava
+    # a devolucao inteira pro Alessandro, R$14.519,53 a mais do que um filtro direto na base
+    # mostra. Um filtro simples (supervisor = X, tipo = devolucao) precisa bater exatamente com
+    # o que o dashboard soma. O canonico (vendedorSupervisorFinal) continua existindo e e usado
+    # só para decidir quem recebe a META do vendedor (evita o double-count que motivou criar
+    # o canonico originalmente) - ver o loop de metas mais abaixo.
+    $codSupervisorRawVal = $arr8[$r,17]
     $codSupervisor = "OUTROS"
-    if ($vendedorSupervisorFinal.ContainsKey($codVendedor)) { $codSupervisor = $vendedorSupervisorFinal[$codVendedor] }
+    if ($codSupervisorRawVal -is [double]) {
+        $csFolded = "$([int]$codSupervisorRawVal)"
+        if ($foldSupervisor.ContainsKey($csFolded)) { $csFolded = $foldSupervisor[$csFolded] }
+        if ($supervisoresInfo.Contains($csFolded)) { $codSupervisor = $csFolded }
+    }
 
     $segTeam = "Varejo"
     if ($segmento.ToUpper().StartsWith("AS")) { $segTeam = "AS" }
@@ -422,11 +437,32 @@ foreach ($l in $linhas) {
     }
 }
 
-# Aplica metas (faturamento e positivacao) por vendedor e soma nos supervisores/geral
+# Rede de seguranca: garante que todo vendedor com meta tenha uma entrada no bucket do seu
+# supervisor CANONICO, mesmo se nenhuma linha dele no periodo tiver sido marcada com esse
+# supervisor na base (caso raro, mas sem isso a meta dele seria perdida silenciosamente em
+# vez de somada - pior que double-count).
+foreach ($cv in $metaFat.Keys) {
+    if (-not $vendedorSupervisorFinal.ContainsKey($cv)) { continue }
+    $csCanon = $vendedorSupervisorFinal[$cv]
+    if (-not $supAgg.ContainsKey($csCanon)) { continue }
+    if (-not $supAgg[$csCanon].vendedores.ContainsKey($cv)) {
+        $supAgg[$csCanon].vendedores[$cv] = @{
+            nome = $metaFat[$cv].vendedor
+            geral = New-Agg
+            pedidos = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+        }
+    }
+}
+
+# Aplica metas (faturamento e positivacao) por vendedor e soma nos supervisores/geral.
+# So no bucket do supervisor CANONICO do vendedor (nao em todo bucket onde ele aparece) -
+# um vendedor com linhas divididas entre dois supervisores (ver nota acima) pode ter uma
+# entrada em cada supAgg[cs].vendedores, mas a meta so pode ser somada uma vez.
 foreach ($cs in $supAgg.Keys) {
     foreach ($cv in $supAgg[$cs].vendedores.Keys) {
         $vAgg = $supAgg[$cs].vendedores[$cv]
-        if ($metaFat.ContainsKey($cv)) {
+        $ehCanonico = $vendedorSupervisorFinal.ContainsKey($cv) -and $vendedorSupervisorFinal[$cv] -eq $cs
+        if ($ehCanonico -and $metaFat.ContainsKey($cv)) {
             $mf = $metaFat[$cv]; $mp = $metaPos[$cv]
             $vAgg.geral.metaFaturamento = $mf.geral
             $vAgg.geral.metaPositivacao = $mp.geral
