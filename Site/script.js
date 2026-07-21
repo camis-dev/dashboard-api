@@ -46,6 +46,10 @@ function buildNav() {
   let html = items.map(it => navItemHtml(it.hash, it.label, it.cor)).join("");
   html += `<div class="nav-section-label">Supervisores</div>`;
   html += DATA.supervisores.map(s => navItemHtml(`#/sup/${s.codigo}`, s.nome, s.cor)).join("");
+  html += `<div class="nav-section-label">Devoluções</div>`;
+  html += navItemHtml("#/devolucoes/total", "Devoluções Geral API", "#d03b3b");
+  html += navItemHtml("#/devolucoes/as", "Devoluções AS", "#a34a8f");
+  html += navItemHtml("#/devolucoes/varejo", "Devoluções Varejo", "#c9752f");
   nav.innerHTML = html;
   nav.querySelectorAll(".nav-item").forEach(el => {
     el.addEventListener("click", () => { location.hash = el.dataset.hash; document.getElementById("sidebar").classList.remove("open"); });
@@ -93,6 +97,15 @@ function render() {
       title.textContent = `Equipe ${sup.nome}`;
       renderSupervisorPage(view, sup);
     }
+  } else if (parts[0] === "devolucoes") {
+    const escopo = parts[1];
+    const map = { total: ["#/devolucoes/total", "Devoluções Geral API", DATA.devolucoes.geral],
+                  as: ["#/devolucoes/as", "Devoluções AS", DATA.devolucoes.porSegmento.AS],
+                  varejo: ["#/devolucoes/varejo", "Devoluções Varejo", DATA.devolucoes.porSegmento.Varejo] };
+    const cfg = map[escopo];
+    if (!cfg) { view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`; return; }
+    setActiveNav(cfg[0]); title.textContent = cfg[1];
+    renderDevolucoesGeralPage(view, cfg[1], cfg[2]);
   } else {
     view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`;
   }
@@ -290,14 +303,15 @@ function pedidosTable(lista) {
   if (!lista.length) return `<p class="empty-state">Nenhum pedido nesta aba.</p>`;
   const rows = lista.map(p => `<tr>
     <td>${fmtDate(p.data)}</td>
-    <td>${esc(p.numeroPedido)}</td>
+    <td>${esc(p.codigoRCA)}</td>
     <td>${esc(p.codCliente)}</td>
+    <td>${esc(p.cnpj)}</td>
     <td>${esc(p.razaoSocial)}</td>
     <td><span class="status-pill ${p.status==='FATURADO'?'status-faturado':'status-afaturar'}">${p.status==='FATURADO'?'Faturado':'A Faturar'}</span></td>
     <td class="num">${fmtBRL2(p.valor)}</td>
   </tr>`).join("");
   return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data digitação</th><th>Nº Pedido</th><th>Cód. Cliente</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
+    <th>Data digitação</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -307,31 +321,47 @@ function pedidosTable(lista) {
 function renderDevolucoesTab(body, codigo, nome) {
   const bloco = DATA.devolucoes.porSupervisor.find(s => s.codigo === codigo);
   const itens = bloco ? bloco.itens : [];
-  const porFornecedor = {};
-  itens.forEach(i => { const f = i.fornecedor || "Outros"; porFornecedor[f] = (porFornecedor[f]||0) + i.valor; });
-  const fornRows = Object.entries(porFornecedor).sort((a,b)=>b[1]-a[1]).map(([f,v]) => `<tr><td>${esc(f)}</td><td class="num">${fmtBRL2(v)}</td></tr>`).join("");
-
   body.innerHTML = `
     <div class="kpi-grid">
       ${kpiCard("Devolução total — " + esc(nome), fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} itens no mês`)}
     </div>
     <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
-    <div class="card"><div class="table-scroll"><table><thead><tr><th>Fornecedor</th><th class="num">Valor devolvido</th></tr></thead>
-      <tbody>${fornRows || '<tr><td colspan="2" class="empty-state">Sem devoluções</td></tr>'}</tbody></table></div></div>
-    <div class="section-title"><span class="bar"></span>Detalhamento (produto, pedido, cliente)</div>
+    <div class="card">${fornecedorValorTable(itens, "Valor devolvido")}</div>
+    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA)</div>
     <div class="card">${devolucoesTable(itens)}</div>
   `;
 }
-function devolucoesTable(itens) {
+function devolucoesTable(itens, opts = {}) {
   if (!itens.length) return `<p class="empty-state">Nenhuma devolução no mês.</p>`;
+  const showSup = opts.showSupervisor;
   const rows = itens.map(i => `<tr>
-    <td>${fmtDate(i.data)}</td><td>${esc(i.numeroPedido)}</td><td>${esc(i.codCliente)}</td>
+    <td>${fmtDate(i.data)}</td><td>${esc(i.codigoRCA)}</td><td>${esc(i.codCliente)}</td><td>${esc(i.cnpj)}</td>
     <td>${esc(i.razaoSocial)}</td><td>${esc(i.produto)}</td><td>${esc(i.fornecedor||"—")}</td>
-    <td>${esc(i.vendedor)}</td><td class="num">${fmtBRL2(i.valor)}</td>
+    ${showSup ? `<td>${esc(i.supervisor)}</td>` : ""}<td>${esc(i.vendedor)}</td><td class="num">${fmtBRL2(i.valor)}</td>
   </tr>`).join("");
   return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data</th><th>Nº Pedido</th><th>Cód. Cliente</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th><th>Vendedor</th><th class="num">Valor</th>
+    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th>
+    ${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function fornecedorValorTable(itens, label) {
+  const porFornecedor = {};
+  itens.forEach(i => { const f = i.fornecedor || "Outros"; porFornecedor[f] = (porFornecedor[f]||0) + i.valor; });
+  const rows = Object.entries(porFornecedor).sort((a,b)=>b[1]-a[1]).map(([f,v]) => `<tr><td>${esc(f)}</td><td class="num">${fmtBRL2(v)}</td></tr>`).join("");
+  return `<div class="table-scroll"><table><thead><tr><th>Fornecedor</th><th class="num">${esc(label)}</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="2" class="empty-state">Sem itens</td></tr>`}</tbody></table></div>`;
+}
+function renderDevolucoesGeralPage(view, titulo, bloco) {
+  const itens = bloco ? bloco.itens : [];
+  view.innerHTML = `
+    <div class="kpi-grid">
+      ${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} itens no mês`)}
+    </div>
+    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
+    <div class="card">${fornecedorValorTable(itens, "Valor devolvido")}</div>
+    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA, supervisor)</div>
+    <div class="card">${devolucoesTable(itens, { showSupervisor: true })}</div>
+  `;
 }
 
 function renderCortesTab(body, codigo, nome) {
@@ -366,13 +396,14 @@ function cortesProdutosTable() {
 function cortesTable(itens) {
   if (!itens.length) return `<p class="empty-state">Nenhum pedido com produto de corte no mês.</p>`;
   const rows = itens.map(i => `<tr>
-    <td>${fmtDate(i.data)}</td><td>${esc(i.numeroPedido)}</td><td>${esc(i.produto)}</td>
+    <td>${fmtDate(i.data)}</td><td>${esc(i.codigoRCA)}</td><td>${esc(i.codCliente)}</td><td>${esc(i.cnpj)}</td>
+    <td>${esc(i.razaoSocial)}</td><td>${esc(i.produto)}</td>
     <td>${esc(i.fornecedor||"—")}</td><td>${esc(i.vendedor)}</td>
     <td><span class="status-pill ${i.status==='FATURADO'?'status-faturado':'status-afaturar'}">${i.status==='FATURADO'?'Faturado':'A Faturar'}</span></td>
     <td class="num">${fmtBRL2(i.valor)}</td>
   </tr>`).join("");
   return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data</th><th>Nº Pedido</th><th>Produto</th><th>Fornecedor</th><th>Vendedor</th><th>Status</th><th class="num">Valor</th>
+    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th><th>Vendedor</th><th>Status</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 

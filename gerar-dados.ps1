@@ -412,9 +412,10 @@ foreach ($l in $linhas) {
         if (-not $vAgg.pedidos.ContainsKey($pedKey)) {
             $vAgg.pedidos[$pedKey] = [ordered]@{
                 numeroPedido = $l.NumPedWinthor
-                numeroPedidoRCA = $l.NumPedRCA
+                codigoRCA = $l.NumPedRCA
                 data = $l.Data.ToString("yyyy-MM-dd")
                 codCliente = $l.CodCliente
+                cnpj = $l.CNPJ
                 razaoSocial = $l.NomeCliente
                 status = $l.StatusFat
                 valor = 0.0
@@ -490,22 +491,42 @@ foreach ($fid in $fornecedores.Keys) {
 # ---------------------------------------------------------------------------
 # 7. Devolucoes (aba dedicada, por RCA/supervisor)
 # ---------------------------------------------------------------------------
+# Measure-Object -Property NAO funciona em [ordered]@{} (hashtable) - so em PSCustomObject/
+# propriedades reais de .NET. Os itens de devolucoes/cortes sao hashtables (para controlar
+# a ordem das chaves no JSON), entao a soma precisa ser manual. Bug real encontrado 2026-07-21:
+# todo "valorTotal" por supervisor de Devolucoes/Cortes estava sempre 0 desde a primeira
+# versao do site por causa disso (Measure-Object falhava silenciosamente, sem erro).
+function Sum-Valor($itens) {
+    $soma = 0.0
+    foreach ($i in $itens) { $soma += $i.valor }
+    return $soma
+}
+
 Write-Host "Montando devolucoes..."
 $devLinhas = $linhas | Where-Object { $_.TipoVenda -eq "DEVOLUCAO" -or $_.TipoVenda -eq "DEVOLUÇÃO" }
 $devPorSup = @{}
+$devPorSegmento = @{ AS = New-Object System.Collections.Generic.List[object]; Varejo = New-Object System.Collections.Generic.List[object] }
+$devGeralItens = New-Object System.Collections.Generic.List[object]
 foreach ($l in $devLinhas) {
     $cs = $l.CodSupervisor
-    if (-not $devPorSup.ContainsKey($cs)) { $devPorSup[$cs] = New-Object System.Collections.Generic.List[object] }
-    $devPorSup[$cs].Add([ordered]@{
+    $nomeSup = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
+    $item = [ordered]@{
         data = $l.Data.ToString("yyyy-MM-dd")
-        numeroPedido = $l.NumPedRCA
+        codigoRCA = $l.NumPedRCA
         codCliente = $l.CodCliente
+        cnpj = $l.CNPJ
         razaoSocial = $l.NomeCliente
         produto = $l.DescProduto
         fornecedor = $l.Fornecedor
+        supervisor = $nomeSup
         vendedor = $l.NomeVendedor
+        segmento = $l.SegTeam
         valor = [Math]::Round([Math]::Abs($l.Valor),2)
-    })
+    }
+    if (-not $devPorSup.ContainsKey($cs)) { $devPorSup[$cs] = New-Object System.Collections.Generic.List[object] }
+    $devPorSup[$cs].Add($item)
+    $devPorSegmento[$l.SegTeam].Add($item)
+    $devGeralItens.Add($item)
 }
 
 # ---------------------------------------------------------------------------
@@ -517,14 +538,17 @@ $cortePorSup = @{}
 $corteConsumoProduto = @{}
 foreach ($l in $corteLinhas) {
     $cs = $l.CodSupervisor
+    $nomeSupC = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
     if (-not $cortePorSup.ContainsKey($cs)) { $cortePorSup[$cs] = New-Object System.Collections.Generic.List[object] }
     $cortePorSup[$cs].Add([ordered]@{
         data = $l.Data.ToString("yyyy-MM-dd")
-        numeroPedido = $l.NumPedRCA
+        codigoRCA = $l.NumPedRCA
         codCliente = $l.CodCliente
+        cnpj = $l.CNPJ
         razaoSocial = $l.NomeCliente
         produto = $l.DescProduto
         fornecedor = $l.Fornecedor
+        supervisor = $nomeSupC
         vendedor = $l.NomeVendedor
         status = $l.StatusFat
         valor = [Math]::Round($l.Valor,2)
@@ -596,17 +620,30 @@ foreach ($fid in $fornecedores.Keys) {
 }
 
 $devolucoesOut = [ordered]@{
-    valorTotal = [Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2) | ForEach-Object { [Math]::Abs($_) }
+    valorTotal = [Math]::Abs([Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2))
+    geral = [ordered]@{
+        valorTotal = [Math]::Abs([Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2))
+        itens = @($devGeralItens | Sort-Object data -Descending)
+    }
+    porSegmento = [ordered]@{
+        AS = [ordered]@{
+            valorTotal = [Math]::Round((Sum-Valor $devPorSegmento.AS),2)
+            itens = @($devPorSegmento.AS | Sort-Object data -Descending)
+        }
+        Varejo = [ordered]@{
+            valorTotal = [Math]::Round((Sum-Valor $devPorSegmento.Varejo),2)
+            itens = @($devPorSegmento.Varejo | Sort-Object data -Descending)
+        }
+    }
     porSupervisor = New-Object System.Collections.Generic.List[object]
 }
-$devolucoesOut.valorTotal = [Math]::Abs([Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2))
 foreach ($cs in $devPorSup.Keys) {
     $nomeSup = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
     $itens = @($devPorSup[$cs] | Sort-Object data -Descending)
     $devolucoesOut.porSupervisor.Add([ordered]@{
         codigo = $cs
         nome = $nomeSup
-        valorTotal = [Math]::Round((($itens | Measure-Object -Property valor -Sum).Sum),2)
+        valorTotal = [Math]::Round((Sum-Valor $itens),2)
         itens = $itens
     })
 }
@@ -622,7 +659,7 @@ foreach ($cs in $cortePorSup.Keys) {
     $cortesOut.porSupervisor.Add([ordered]@{
         codigo = $cs
         nome = $nomeSup
-        valorTotal = [Math]::Round((($itens | Measure-Object -Property valor -Sum).Sum),2)
+        valorTotal = [Math]::Round((Sum-Valor $itens),2)
         itens = $itens
     })
 }
