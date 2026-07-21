@@ -383,19 +383,15 @@ function ConvertTo-JsonAgg($agg) {
 
 Write-Host "Agregando totais..."
 $totalGeral = New-Agg
-$geralAS = New-Agg
-$geralVarejo = New-Agg
 $supAgg = @{}
-foreach ($cs in $supervisoresInfo.Keys) { $supAgg[$cs] = @{ geral = New-Agg; AS = New-Agg; Varejo = New-Agg; vendedores = @{} } }
-$supAgg["OUTROS"] = @{ geral = New-Agg; AS = New-Agg; Varejo = New-Agg; vendedores = @{} }
+foreach ($cs in $supervisoresInfo.Keys) { $supAgg[$cs] = @{ geral = New-Agg; vendedores = @{} } }
+$supAgg["OUTROS"] = @{ geral = New-Agg; vendedores = @{} }
 
 foreach ($l in $linhas) {
     Add-Linha $totalGeral $l
-    if ($l.SegTeam -eq "AS") { Add-Linha $geralAS $l } else { Add-Linha $geralVarejo $l }
 
     $cs = $l.CodSupervisor
     Add-Linha $supAgg[$cs].geral $l
-    Add-Linha $supAgg[$cs][$l.SegTeam] $l
 
     if (-not $supAgg[$cs].vendedores.ContainsKey($l.CodVendedor)) {
         $supAgg[$cs].vendedores[$l.CodVendedor] = @{
@@ -426,10 +422,7 @@ foreach ($l in $linhas) {
     }
 }
 
-# Aplica metas (faturamento e positivacao) por vendedor e soma nos supervisores/geral/segmentos
-# Nota: os totais de segmento (AS/Varejo) nao tem meta propria na planilha de metas (a meta e
-# por vendedor, sem quebra por segmento do cliente) - por isso a meta so e somada nos niveis
-# vendedor / supervisor / total geral, nunca em geralAS/geralVarejo (que ficam so com realizado).
+# Aplica metas (faturamento e positivacao) por vendedor e soma nos supervisores/geral
 foreach ($cs in $supAgg.Keys) {
     foreach ($cv in $supAgg[$cs].vendedores.Keys) {
         $vAgg = $supAgg[$cs].vendedores[$cv]
@@ -454,39 +447,6 @@ foreach ($cs in $supAgg.Keys) {
             }
         }
     }
-}
-
-# A planilha de metas nao quebra a meta por segmento de cliente (AS/Varejo) - so por
-# vendedor. Para nao mostrar "Meta R$ 0" no Geral AS/Varejo, a meta geral (e de cada
-# fornecedor) e rateada proporcionalmente a representatividade de cada segmento no
-# realizado do mes (projetado = faturado + a faturar, mesma logica de "Est. dia" que
-# a base de vendas ja usa) - faturamento pelo projetado, positivacao pelos clientes ja
-# positivados. Se um segmento ainda nao tiver nenhum realizado no fornecedor, cai 50/50.
-function Split-MetaPorSegmento($totalMeta, $realizadoAS, $realizadoVarejo) {
-    $soma = $realizadoAS + $realizadoVarejo
-    if ($soma -gt 0) {
-        $shareAS = $realizadoAS / $soma
-    } else {
-        $shareAS = 0.5
-    }
-    return @{ AS = $totalMeta * $shareAS; Varejo = $totalMeta * (1 - $shareAS) }
-}
-$splitGeral = Split-MetaPorSegmento $totalGeral.metaFaturamento ($geralAS.faturado + $geralAS.aFaturar) ($geralVarejo.faturado + $geralVarejo.aFaturar)
-$geralAS.metaFaturamento = $splitGeral.AS
-$geralVarejo.metaFaturamento = $splitGeral.Varejo
-$splitPos = Split-MetaPorSegmento $totalGeral.metaPositivacao (Count-Positivados $geralAS) (Count-Positivados $geralVarejo)
-$geralAS.metaPositivacao = $splitPos.AS
-$geralVarejo.metaPositivacao = $splitPos.Varejo
-foreach ($fid in $fornecedores.Keys) {
-    $bTotal = Get-FornBucket $totalGeral $fid
-    $bAS = Get-FornBucket $geralAS $fid
-    $bVarejo = Get-FornBucket $geralVarejo $fid
-    $sf = Split-MetaPorSegmento $bTotal.metaFaturamento ($bAS.faturado + $bAS.aFaturar) ($bVarejo.faturado + $bVarejo.aFaturar)
-    $bAS.metaFaturamento = $sf.AS
-    $bVarejo.metaFaturamento = $sf.Varejo
-    $sp = Split-MetaPorSegmento $bTotal.metaPositivacao (Count-Positivados $bAS) (Count-Positivados $bVarejo)
-    $bAS.metaPositivacao = $sp.AS
-    $bVarejo.metaPositivacao = $sp.Varejo
 }
 
 # ---------------------------------------------------------------------------
@@ -533,7 +493,6 @@ function Get-Or-NovoGrupo($gruposDict, $l, $nomeSup) {
 Write-Host "Montando devolucoes..."
 $devLinhas = $linhas | Where-Object { $_.TipoVenda -eq "DEVOLUCAO" -or $_.TipoVenda -eq "DEVOLUÇÃO" }
 $devPorSupGrupos = @{}
-$devPorSegmentoGrupos = @{ AS = @{}; Varejo = @{} }
 $devGeralGrupos = @{}
 foreach ($l in $devLinhas) {
     $cs = $l.CodSupervisor
@@ -542,9 +501,8 @@ foreach ($l in $devLinhas) {
     if (-not $devPorSupGrupos.ContainsKey($cs)) { $devPorSupGrupos[$cs] = @{} }
 
     $gSup = Get-Or-NovoGrupo $devPorSupGrupos[$cs] $l $nomeSup
-    $gSeg = Get-Or-NovoGrupo $devPorSegmentoGrupos[$l.SegTeam] $l $nomeSup
     $gGeral = Get-Or-NovoGrupo $devGeralGrupos $l $nomeSup
-    foreach ($g in @($gSup, $gSeg, $gGeral)) {
+    foreach ($g in @($gSup, $gGeral)) {
         $g.valorTotal = [Math]::Round($g.valorTotal + $valorAbs, 2)
         $g.produtos.Add([ordered]@{ codProduto = $l.CodProd; produto = $l.DescProduto; fornecedor = $l.Fornecedor; valor = $valorAbs })
     }
@@ -623,10 +581,6 @@ foreach ($cs in $supervisoresInfo.Keys) {
         nome = $info.nome
         cor = $info.cor
         geral = ConvertTo-JsonAgg $sAgg.geral
-        segmentos = [ordered]@{
-            AS = ConvertTo-JsonAgg $sAgg.AS
-            Varejo = ConvertTo-JsonAgg $sAgg.Varejo
-        }
         vendedores = $vendOut
     })
 }
@@ -651,16 +605,6 @@ $devolucoesOut = [ordered]@{
     geral = [ordered]@{
         valorTotal = $devTotalAbs
         grupos = Grupos-ParaSaida $devGeralGrupos
-    }
-    porSegmento = [ordered]@{
-        AS = [ordered]@{
-            valorTotal = [Math]::Round((Sum-GrupoValor $devPorSegmentoGrupos.AS.Values),2)
-            grupos = Grupos-ParaSaida $devPorSegmentoGrupos.AS
-        }
-        Varejo = [ordered]@{
-            valorTotal = [Math]::Round((Sum-GrupoValor $devPorSegmentoGrupos.Varejo.Values),2)
-            grupos = Grupos-ParaSaida $devPorSegmentoGrupos.Varejo
-        }
     }
     porSupervisor = New-Object System.Collections.Generic.List[object]
 }
@@ -710,8 +654,6 @@ $dataJson = [ordered]@{
     }
     fornecedores = $fornecedoresOut
     totalGeral = ConvertTo-JsonAgg $totalGeral
-    geralAS = ConvertTo-JsonAgg $geralAS
-    geralVarejo = ConvertTo-JsonAgg $geralVarejo
     supervisores = $supervisoresOut
     devolucoes = $devolucoesOut
     cortes = $cortesOut

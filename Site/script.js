@@ -122,20 +122,12 @@ function wireGrupoTable(container) {
 // ---------------------------------------------------------------------------
 function buildNav() {
   const nav = document.getElementById("nav");
-  const items = [
-    { hash: "#/total", label: "Geral API Total", cor: "#1f5fa8" },
-    { hash: "#/as", label: "Geral AS", cor: "#4a3aa7" },
-    { hash: "#/varejo", label: "Geral Varejo", cor: "#eb6834" },
-  ];
-  let html = items.map(it => navItemHtml(it.hash, it.label, it.cor)).join("");
+  let html = `<div class="nav-section-label">Geral</div>`;
+  html += navItemHtml("#/total", "Geral API Total", "#1f5fa8");
+  html += navItemHtml("#/devolucoes/total", "Devoluções", "#d03b3b");
+  html += navItemHtml("#/cortes/total", "Cortes", "#8a5a3b");
   html += `<div class="nav-section-label">Supervisores</div>`;
   html += DATA.supervisores.map(s => navItemHtml(`#/sup/${s.codigo}`, s.nome, s.cor)).join("");
-  html += `<div class="nav-section-label">Devoluções</div>`;
-  html += navItemHtml("#/devolucoes/total", "Devoluções Geral API", "#d03b3b");
-  html += navItemHtml("#/devolucoes/as", "Devoluções AS", "#a34a8f");
-  html += navItemHtml("#/devolucoes/varejo", "Devoluções Varejo", "#c9752f");
-  html += `<div class="nav-section-label">Cortes</div>`;
-  html += navItemHtml("#/cortes/total", "Cortes Geral API", "#8a5a3b");
   nav.innerHTML = html;
   nav.querySelectorAll(".nav-item").forEach(el => {
     el.addEventListener("click", () => { location.hash = el.dataset.hash; document.getElementById("sidebar").classList.remove("open"); });
@@ -165,12 +157,6 @@ function render() {
   if (parts[0] === "total") {
     setActiveNav("#/total"); title.textContent = "Geral API Total";
     renderGeralPage(view, DATA.totalGeral, { escopo: "total" });
-  } else if (parts[0] === "as") {
-    setActiveNav("#/as"); title.textContent = "Geral AS";
-    renderGeralPage(view, DATA.geralAS, { escopo: "as" });
-  } else if (parts[0] === "varejo") {
-    setActiveNav("#/varejo"); title.textContent = "Geral Varejo";
-    renderGeralPage(view, DATA.geralVarejo, { escopo: "varejo" });
   } else if (parts[0] === "sup") {
     const sup = DATA.supervisores.find(s => s.codigo === parts[1]);
     if (!sup) { view.innerHTML = `<p class="empty-state">Supervisor não encontrado.</p>`; return; }
@@ -184,18 +170,12 @@ function render() {
       title.textContent = `Equipe ${sup.nome}`;
       renderSupervisorPage(view, sup);
     }
-  } else if (parts[0] === "devolucoes") {
-    const escopo = parts[1];
-    const map = { total: ["#/devolucoes/total", "Devoluções Geral API", DATA.devolucoes.geral],
-                  as: ["#/devolucoes/as", "Devoluções AS", DATA.devolucoes.porSegmento.AS],
-                  varejo: ["#/devolucoes/varejo", "Devoluções Varejo", DATA.devolucoes.porSegmento.Varejo] };
-    const cfg = map[escopo];
-    if (!cfg) { view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`; return; }
-    setActiveNav(cfg[0]); title.textContent = cfg[1];
-    renderDevolucoesGeralPage(view, cfg[1], cfg[2]);
+  } else if (parts[0] === "devolucoes" && parts[1] === "total") {
+    setActiveNav("#/devolucoes/total"); title.textContent = "Devoluções";
+    renderDevolucoesGeralPage(view, "Devoluções", DATA.devolucoes.geral);
   } else if (parts[0] === "cortes" && parts[1] === "total") {
-    setActiveNav("#/cortes/total"); title.textContent = "Cortes Geral API";
-    renderCortesGeralPage(view, "Cortes Geral API", DATA.cortes.geral);
+    setActiveNav("#/cortes/total"); title.textContent = "Cortes";
+    renderCortesGeralPage(view, "Cortes", DATA.cortes.geral);
   } else {
     view.innerHTML = `<p class="empty-state">Página não encontrada.</p>`;
   }
