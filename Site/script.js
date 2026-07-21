@@ -17,6 +17,90 @@ function statusColor(p) {
   if (p >= 40) return "var(--warn)";
   return "var(--critical)";
 }
+function statusPillHtml(status) {
+  const ok = status === "FATURADO";
+  return `<span class="status-pill ${ok?'status-faturado':'status-afaturar'}">${ok?'Faturado':'A Faturar'}</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// Busca genérica (pedido winthor/clube, vendedor, RCA, CNPJ, cód. cliente) — item 7
+// ---------------------------------------------------------------------------
+function searchBoxHtml(id) {
+  return `<div class="search-box"><input type="text" id="${id}" class="search-input"
+    placeholder="Buscar por pedido Winthor, pedido Clube, vendedor, cód. RCA, CNPJ ou cód. cliente..."></div>`;
+}
+function wireSearchBox(inputId, containerEl) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.addEventListener("input", () => {
+    const term = input.value.trim().toLowerCase();
+    containerEl.querySelectorAll("[data-search]").forEach(row => {
+      const match = !term || row.dataset.search.includes(term);
+      row.style.display = match ? "" : "none";
+      // se a linha de detalhe (accordion) estiver aberta e a linha-mãe some, esconde junto
+      if (!match && row.nextElementSibling && row.nextElementSibling.classList.contains("grupo-detail")) {
+        row.nextElementSibling.style.display = "none";
+        row.classList.remove("open");
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tabela agrupada cliente+pedido, com detalhe de produtos expansível — Devoluções/Cortes
+// ---------------------------------------------------------------------------
+function grupoTable(grupos, opts = {}) {
+  if (!grupos.length) return `<p class="empty-state">Nenhum registro no mês.</p>`;
+  const showSup = !!opts.showSupervisor;
+  const showStatus = !!opts.showStatus;
+  const rows = grupos.map(g => {
+    const searchText = [g.numeroPedidoWinthor, g.numeroPedidoClube, g.codigoRCA, g.vendedor, g.cnpj, g.codCliente, g.razaoSocial]
+      .join(" ").toLowerCase();
+    const detailCols = 8 + (showSup ? 1 : 0);
+    return `
+      <tr class="grupo-row" data-search="${esc(searchText)}">
+        <td class="grupo-toggle">▸</td>
+        <td>${fmtDate(g.data)}</td>
+        <td>${esc(g.numeroPedidoWinthor)}</td>
+        <td>${esc(g.numeroPedidoClube)}</td>
+        <td>${esc(g.codigoRCA)}</td>
+        <td>${esc(g.codCliente)}</td>
+        <td>${esc(g.cnpj)}</td>
+        <td>${esc(g.razaoSocial)}</td>
+        ${showSup ? `<td>${esc(g.supervisor)}</td>` : ""}
+        <td>${esc(g.vendedor)}</td>
+        <td class="num">${fmtBRL2(g.valorTotal)}</td>
+      </tr>
+      <tr class="grupo-detail" style="display:none">
+        <td colspan="${detailCols + 2}">
+          <table class="produtos-subtable"><thead><tr>
+            <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th>${showStatus ? "<th>Status</th>" : ""}<th class="num">Valor</th>
+          </tr></thead><tbody>
+            ${g.produtos.map(p => `<tr>
+              <td>${esc(p.codProduto)}</td><td>${esc(p.produto)}</td><td>${esc(p.fornecedor||"—")}</td>
+              ${showStatus ? `<td>${statusPillHtml(p.status)}</td>` : ""}
+              <td class="num">${fmtBRL2(p.valor)}</td>
+            </tr>`).join("")}
+          </tbody></table>
+        </td>
+      </tr>`;
+  }).join("");
+  const idAttr = opts.exportable === false ? "" : ` id="exportTable"`;
+  return `<div class="table-scroll"><table${idAttr}><thead><tr>
+    <th class="grupo-toggle"></th><th>Data</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th>
+    <th>Razão Social</th>${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th class="num">Valor</th>
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function wireGrupoTable(container) {
+  container.querySelectorAll(".grupo-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const detail = row.nextElementSibling;
+      const open = detail.style.display !== "none";
+      detail.style.display = open ? "none" : "";
+      row.classList.toggle("open", !open);
+    });
+  });
+}
 
 (function init() {
   if (!window.DASHBOARD_DATA) {
@@ -300,135 +384,138 @@ function renderVendedorPage(view, sup, vend) {
       <button class="tab-btn ${currentVendTab==='faturado'?'active':''}" data-tab="faturado">Faturado (${faturados.length})</button>
       <button class="tab-btn ${currentVendTab==='afaturar'?'active':''}" data-tab="afaturar">A Faturar (${aFaturar.length})</button>
     </div>
-    <div class="card">${pedidosTable(listaAtual)}</div>
+    <div class="card" id="pedidosCard">${pedidosTable(listaAtual, "pedidosSearch")}</div>
+
+    <div class="section-title"><span class="bar"></span>Devoluções e Cortes deste vendedor</div>
+    <div id="vendDevCortesSlot"></div>
   `;
   document.querySelectorAll("#vendTabs .tab-btn").forEach(b => b.addEventListener("click", () => {
     currentVendTab = b.dataset.tab; renderVendedorPage(view, sup, vend);
   }));
+  const pedidosCard = document.getElementById("pedidosCard");
+  wireSearchBox("pedidosSearch", pedidosCard);
+  renderVendedorDevCortes(document.getElementById("vendDevCortesSlot"), sup.codigo, vend.codigo);
 }
-function pedidosTable(lista) {
+function renderVendedorDevCortes(container, codigoSup, codigoVend) {
+  const devBloco = DATA.devolucoes.porSupervisor.find(s => s.codigo === codigoSup);
+  const corteBloco = DATA.cortes.porSupervisor.find(s => s.codigo === codigoSup);
+  const devGrupos = devBloco ? devBloco.grupos.filter(g => g.codigoRCA === codigoVend) : [];
+  const corteGrupos = corteBloco ? corteBloco.grupos.filter(g => g.codigoRCA === codigoVend) : [];
+  const devTotal = devGrupos.reduce((a,g) => a + g.valorTotal, 0);
+  const corteTotal = corteGrupos.reduce((a,g) => a + g.valorTotal, 0);
+  container.innerHTML = `
+    <div class="kpi-grid">
+      ${kpiCard("Devolução no mês", fmtBRL2(devTotal), `${devGrupos.length} pedido(s) com devolução`)}
+      ${kpiCard("Vendido em itens de corte", fmtBRL2(corteTotal), `${corteGrupos.length} pedido(s) com item de corte`)}
+    </div>
+    <div class="tabs" id="devCorteTabs">
+      <button class="tab-btn active" data-tab="devolucoes">Devoluções (${devGrupos.length})</button>
+      <button class="tab-btn" data-tab="cortes">Cortes (${corteGrupos.length})</button>
+    </div>
+    <div class="card" id="devCorteCard"></div>
+  `;
+  const showTab = (tab) => {
+    container.querySelectorAll("#devCorteTabs .tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    const card = document.getElementById("devCorteCard");
+    const grupos = tab === "cortes" ? corteGrupos : devGrupos;
+    const opts = tab === "cortes" ? { showStatus: true, exportable: false } : { exportable: false };
+    card.innerHTML = grupos.length
+      ? `<p class="hint">Clique numa linha para ver os produtos daquele pedido.</p>${grupoTable(grupos, opts)}`
+      : `<p class="empty-state">Nenhum registro no mês.</p>`;
+    wireGrupoTable(card);
+  };
+  container.querySelectorAll("#devCorteTabs .tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  showTab("devolucoes");
+}
+function pedidosTable(lista, containerId) {
   if (!lista.length) return `<p class="empty-state">Nenhum pedido nesta aba.</p>`;
-  const rows = lista.map(p => `<tr>
+  const rows = lista.map(p => {
+    const searchText = [p.numeroPedidoWinthor, p.numeroPedidoClube, p.codigoRCA, p.cnpj, p.codCliente, p.razaoSocial].join(" ").toLowerCase();
+    return `<tr data-search="${esc(searchText)}">
     <td>${fmtDate(p.data)}</td>
+    <td>${esc(p.numeroPedidoWinthor)}</td>
+    <td>${esc(p.numeroPedidoClube)}</td>
     <td>${esc(p.codigoRCA)}</td>
     <td>${esc(p.codCliente)}</td>
     <td>${esc(p.cnpj)}</td>
     <td>${esc(p.razaoSocial)}</td>
-    <td><span class="status-pill ${p.status==='FATURADO'?'status-faturado':'status-afaturar'}">${p.status==='FATURADO'?'Faturado':'A Faturar'}</span></td>
+    <td>${statusPillHtml(p.status)}</td>
     <td class="num">${fmtBRL2(p.valor)}</td>
-  </tr>`).join("");
-  return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data digitação</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
+  </tr>`;
+  }).join("");
+  return `${searchBoxHtml(containerId)}<div class="table-scroll"><table id="exportTable"><thead><tr>
+    <th>Data digitação</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------------------
-// Devoluções / Cortes (por supervisor, reutilizado também no Geral Total)
+// Devoluções / Cortes (por supervisor, reutilizado também no Geral Total/AS/Varejo)
 // ---------------------------------------------------------------------------
-function renderDevolucoesTab(body, codigo, nome) {
-  const bloco = DATA.devolucoes.porSupervisor.find(s => s.codigo === codigo);
-  const itens = bloco ? bloco.itens : [];
-  body.innerHTML = `
-    <div class="kpi-grid">
-      ${kpiCard("Devolução total — " + esc(nome), fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} itens no mês`)}
-    </div>
-    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
-    <div class="card">${fornecedorValorTable(itens, "Valor devolvido")}</div>
-    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA)</div>
-    <div class="card">${devolucoesTable(itens)}</div>
-  `;
-}
-function devolucoesTable(itens, opts = {}) {
-  if (!itens.length) return `<p class="empty-state">Nenhuma devolução no mês.</p>`;
-  const showSup = opts.showSupervisor;
-  const rows = itens.map(i => `<tr>
-    <td>${fmtDate(i.data)}</td><td>${esc(i.codigoRCA)}</td><td>${esc(i.codCliente)}</td><td>${esc(i.cnpj)}</td>
-    <td>${esc(i.razaoSocial)}</td><td>${esc(i.produto)}</td><td>${esc(i.fornecedor||"—")}</td>
-    ${showSup ? `<td>${esc(i.supervisor)}</td>` : ""}<td>${esc(i.vendedor)}</td><td class="num">${fmtBRL2(i.valor)}</td>
-  </tr>`).join("");
-  return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th>
-    ${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th class="num">Valor</th>
-  </tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-function fornecedorValorTable(itens, label) {
+function fornecedorValorTable(grupos, label) {
   const porFornecedor = {};
-  itens.forEach(i => { const f = i.fornecedor || "Outros"; porFornecedor[f] = (porFornecedor[f]||0) + i.valor; });
+  grupos.forEach(g => g.produtos.forEach(p => {
+    const f = p.fornecedor || "Outros";
+    porFornecedor[f] = (porFornecedor[f]||0) + p.valor;
+  }));
   const rows = Object.entries(porFornecedor).sort((a,b)=>b[1]-a[1]).map(([f,v]) => `<tr><td>${esc(f)}</td><td class="num">${fmtBRL2(v)}</td></tr>`).join("");
   return `<div class="table-scroll"><table><thead><tr><th>Fornecedor</th><th class="num">${esc(label)}</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="2" class="empty-state">Sem itens</td></tr>`}</tbody></table></div>`;
 }
+function renderDevolucoesTab(body, codigo, nome) {
+  const bloco = DATA.devolucoes.porSupervisor.find(s => s.codigo === codigo);
+  renderGrupoESearch(body, "Devolução total — " + nome, bloco, { showSupervisor: false, fornecedorLabel: "Valor devolvido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA)" });
+}
 function renderDevolucoesGeralPage(view, titulo, bloco) {
-  const itens = bloco ? bloco.itens : [];
-  view.innerHTML = `
-    <div class="kpi-grid">
-      ${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} itens no mês`)}
-    </div>
-    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
-    <div class="card">${fornecedorValorTable(itens, "Valor devolvido")}</div>
-    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA, supervisor)</div>
-    <div class="card">${devolucoesTable(itens, { showSupervisor: true })}</div>
-  `;
+  renderGrupoESearch(view, titulo, bloco, { showSupervisor: true, fornecedorLabel: "Valor devolvido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA, supervisor)" });
 }
-
 function renderCortesGeralPage(view, titulo, bloco) {
-  const itens = bloco ? bloco.itens : [];
   view.innerHTML = `
-    <div class="kpi-grid">
-      ${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} pedidos no mês`)}
-    </div>
-    <div class="section-title"><span class="bar"></span>Alocação por Produto (risco de corte)</div>
+    <div class="kpi-grid">${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${bloco ? bloco.grupos.length : 0} pedido(s) no mês`)}</div>
+    <div class="section-title"><span class="bar"></span>Produtos de alocação controlada mais vendidos</div>
     <div class="card">${cortesProdutosTable()}</div>
-    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
-    <div class="card">${fornecedorValorTable(itens, "Valor vendido")}</div>
-    <div class="section-title"><span class="bar"></span>Detalhamento (cliente, CNPJ, produto, RCA, supervisor)</div>
-    <div class="card">${cortesTable(itens, { showSupervisor: true })}</div>
+    <div id="cortesGrupoSlot"></div>
   `;
+  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: true, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA, supervisor)", skipKpi: true });
 }
-
 function renderCortesTab(body, codigo, nome) {
   const bloco = DATA.cortes.porSupervisor.find(s => s.codigo === codigo);
-  const itens = bloco ? bloco.itens : [];
   body.innerHTML = `
-    <div class="kpi-grid">
-      ${kpiCard("Vendido em itens de corte — " + esc(nome), fmtBRL2(bloco ? bloco.valorTotal : 0), `${itens.length} pedidos no mês`)}
-    </div>
-    <div class="section-title"><span class="bar"></span>Alocação por Produto (risco de corte)</div>
+    <div class="kpi-grid">${kpiCard("Vendido em itens de corte — " + esc(nome), fmtBRL2(bloco ? bloco.valorTotal : 0), `${bloco ? bloco.grupos.length : 0} pedido(s) no mês`)}</div>
+    <div class="section-title"><span class="bar"></span>Produtos de alocação controlada mais vendidos</div>
     <div class="card">${cortesProdutosTable()}</div>
-    <div class="section-title"><span class="bar"></span>Detalhamento (produto, pedido, valor) — ${esc(nome)}</div>
-    <div class="card">${cortesTable(itens)}</div>
+    <div id="cortesGrupoSlot"></div>
   `;
+  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: false, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: `Detalhamento (produto, pedido, valor) — ${nome}`, skipKpi: true });
+}
+
+// Renderiza KPI (opcional) + tabela "Por Fornecedor" + busca + tabela agrupada com accordion,
+// usado por Devoluções e Cortes (Geral/AS/Varejo/por Supervisor) — evita duplicar a mesma
+// composição 4 vezes.
+function renderGrupoESearch(container, kpiLabel, bloco, opts) {
+  const grupos = bloco ? bloco.grupos : [];
+  const searchId = "search-" + Math.random().toString(36).slice(2, 9);
+  container.innerHTML = `
+    ${opts.skipKpi ? "" : `<div class="kpi-grid">${kpiCard(kpiLabel, fmtBRL2(bloco ? bloco.valorTotal : 0), `${grupos.length} pedido(s) no mês`)}</div>`}
+    <div class="section-title"><span class="bar"></span>Por Fornecedor</div>
+    <div class="card">${fornecedorValorTable(grupos, opts.fornecedorLabel)}</div>
+    <div class="section-title"><span class="bar"></span>${opts.detailTitle}</div>
+    <p class="hint">Clique numa linha para ver os produtos daquele pedido.</p>
+    <div class="card" id="${searchId}-card">${searchBoxHtml(searchId)}${grupoTable(grupos, opts)}</div>
+  `;
+  const card = document.getElementById(`${searchId}-card`);
+  wireGrupoTable(card);
+  wireSearchBox(searchId, card);
 }
 function cortesProdutosTable() {
   const produtos = DATA.cortes.produtos.slice(0, 40);
   if (!produtos.length) return `<p class="empty-state">Sem dados de corte.</p>`;
-  const rows = produtos.map(p => {
-    const consumoPct = p.alocado > 0 ? Math.round((p.vendidoUnid / p.alocado) * 100) : 0;
-    return `<tr><td>${esc(p.produto)}</td><td>${esc(p.categoria)}</td><td>${esc(p.fornecedor||"—")}</td>
+  const rows = produtos.map(p => `<tr><td>${esc(p.produto)}</td><td>${esc(p.categoria)}</td><td>${esc(p.fornecedor||"—")}</td>
       <td class="num">${fmtBRL2(p.valor)}</td>
-      <td class="num">${fmtInt(p.vendidoUnid)} / ${fmtInt(p.alocado)}</td>
-      <td class="num" style="color:${statusColor(100-consumoPct)};font-weight:700">${consumoPct}%</td></tr>`;
-  }).join("");
+      <td class="num">${fmtInt(p.vendidoUnid)}</td></tr>`).join("");
   return `<div class="table-scroll"><table><thead><tr>
-    <th>Produto</th><th>Categoria</th><th>Fornecedor</th><th class="num">Valor vendido no mês</th>
-    <th class="num">Unid. vendidas / Alocação</th><th class="num">% consumido</th>
+    <th>Produto</th><th>Categoria</th><th>Fornecedor</th><th class="num">Valor vendido no mês</th><th class="num">Unidades vendidas</th>
   </tr></thead><tbody>${rows}</tbody></table></div>
-  <p class="hint" style="margin-top:8px">Mostrando os 40 produtos de maior valor vendido dentre os ${DATA.cortes.produtos.length} itens de alocação controlada. % consumido acima de 100% indica que a venda já superou a alocação de referência — risco de corte no restante do mês.</p>`;
-}
-function cortesTable(itens, opts = {}) {
-  if (!itens.length) return `<p class="empty-state">Nenhum pedido com produto de corte no mês.</p>`;
-  const showSup = opts.showSupervisor;
-  const rows = itens.map(i => `<tr>
-    <td>${fmtDate(i.data)}</td><td>${esc(i.codigoRCA)}</td><td>${esc(i.codCliente)}</td><td>${esc(i.cnpj)}</td>
-    <td>${esc(i.razaoSocial)}</td><td>${esc(i.produto)}</td>
-    <td>${esc(i.fornecedor||"—")}</td>${showSup ? `<td>${esc(i.supervisor)}</td>` : ""}<td>${esc(i.vendedor)}</td>
-    <td><span class="status-pill ${i.status==='FATURADO'?'status-faturado':'status-afaturar'}">${i.status==='FATURADO'?'Faturado':'A Faturar'}</span></td>
-    <td class="num">${fmtBRL2(i.valor)}</td>
-  </tr>`).join("");
-  return `<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Produto</th><th>Fornecedor</th>
-    ${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th>Status</th><th class="num">Valor</th>
-  </tr></thead><tbody>${rows}</tbody></table></div>`;
+  <p class="hint" style="margin-top:8px">Top 40 produtos de alocação controlada por valor vendido, dentre ${DATA.cortes.produtos.length} itens monitorados no mês.</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -437,8 +524,10 @@ function cortesTable(itens, opts = {}) {
 function exportCurrentViewToExcel() {
   const table = document.getElementById("exportTable") || document.querySelector(".view table");
   if (!table) { alert("Não há tabela para exportar nesta tela."); return; }
-  const rows = [...table.querySelectorAll("tr")].map(tr =>
-    [...tr.children].map(td => `"${td.textContent.trim().replace(/"/g, '""')}"`).join(";")
+  // linhas de detalhe do accordion (produtos de um pedido) ficam de fora do CSV - só a
+  // tabela-resumo (cliente/pedido/valor) é exportada, senão o texto aninhado vira uma bagunça
+  const rows = [...table.querySelectorAll("tr")].filter(tr => !tr.classList.contains("grupo-detail")).map(tr =>
+    [...tr.children].filter(td => !td.classList.contains("grupo-toggle")).map(td => `"${td.textContent.trim().replace(/"/g, '""')}"`).join(";")
   );
   const csv = "﻿" + rows.join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
