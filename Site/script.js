@@ -123,7 +123,8 @@ function kpiGrid(agg) {
     <div class="kpi-grid">
       ${kpiCard("Meta de Faturamento", fmtBRL(agg.metaFaturamento), "Meta do mês (7 fornecedores)")}
       ${kpiCard("Faturado (líquido)", fmtBRL(agg.faturadoLiquido), `${progFat}% da meta${devSub}`, { progress: progFat })}
-      ${kpiCard("Projetado (Fat. + A Faturar)", fmtBRL(agg.faturadoLiquido + agg.aFaturar), `${progGeral}% da meta · a faturar: ${fmtBRL(agg.aFaturar)}`, { progress: progGeral })}
+      ${kpiCard("A Faturar", fmtBRL(agg.aFaturar), "Pedidos ainda não faturados")}
+      ${kpiCard("Projetado (Fat. + A Faturar)", fmtBRL(agg.faturadoLiquido + agg.aFaturar), `${progGeral}% da meta se tudo for faturado`, { progress: progGeral })}
     </div>
     <div class="kpi-group-label">Positivação (clientes)</div>
     <div class="kpi-grid">
