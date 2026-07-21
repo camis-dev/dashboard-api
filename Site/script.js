@@ -192,7 +192,6 @@ function renderGeralPage(view, agg, opts) {
     <div class="card">${fornecedorBars(agg)}</div>
     <div class="card">${fornecedorTable(agg)}</div>
     ${opts.escopo === "total" ? rankingSupervisoresCard() : ""}
-    ${DATA.outrosItensValor ? `<p class="empty-state" style="text-align:left">Itens fora do escopo dos 7 fornecedores API no mês: ${fmtBRL2(DATA.outrosItensValor)} (não entram nas metas por fornecedor).</p>` : ""}
   `;
 }
 function rankingSupervisoresCard() {
