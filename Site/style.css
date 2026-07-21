@@ -129,7 +129,12 @@ body::before {
 .section-title .bar { width: 4px; height: 16px; background: var(--blue); border-radius: 2px; }
 .section-title:first-child { margin-top: 0; }
 
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.kpi-group-label {
+  font-size: 11px; font-weight: 700; color: var(--ink-muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin: 18px 0 8px;
+}
+.kpi-group-label:first-child { margin-top: 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 4px; }
 .kpi {
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 16px 18px; box-shadow: var(--shadow);

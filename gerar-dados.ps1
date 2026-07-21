@@ -293,6 +293,8 @@ function New-Agg {
         devolucao = 0.0
         bonificacao = 0.0
         clientesVenda = New-Object System.Collections.Generic.HashSet[string]
+        clientesFaturado = New-Object System.Collections.Generic.HashSet[string]
+        clientesAFaturar = New-Object System.Collections.Generic.HashSet[string]
         clientesDevolucao = New-Object System.Collections.Generic.HashSet[string]
         porFornecedor = [ordered]@{}
     }
@@ -304,6 +306,8 @@ function Get-FornBucket($agg, $fid) {
             metaFaturamento = 0.0; metaPositivacao = 0.0
             faturado = 0.0; aFaturar = 0.0; devolucao = 0.0; bonificacao = 0.0
             clientesVenda = New-Object System.Collections.Generic.HashSet[string]
+            clientesFaturado = New-Object System.Collections.Generic.HashSet[string]
+            clientesAFaturar = New-Object System.Collections.Generic.HashSet[string]
             clientesDevolucao = New-Object System.Collections.Generic.HashSet[string]
         }
     }
@@ -313,7 +317,8 @@ function Add-Linha($agg, $linha) {
     if ($linha.Fornecedor) {
         $b = Get-FornBucket $agg $linha.Fornecedor
         if ($linha.TipoVenda -eq "VENDA") {
-            if ($linha.StatusFat -eq "FATURADO") { $b.faturado += $linha.Valor } else { $b.aFaturar += $linha.Valor }
+            if ($linha.StatusFat -eq "FATURADO") { $b.faturado += $linha.Valor; [void]$b.clientesFaturado.Add($linha.CNPJ) }
+            else { $b.aFaturar += $linha.Valor; [void]$b.clientesAFaturar.Add($linha.CNPJ) }
             [void]$b.clientesVenda.Add($linha.CNPJ)
         } elseif ($linha.TipoVenda -eq "DEVOLUCAO" -or $linha.TipoVenda -eq "DEVOLUÇÃO") {
             $b.devolucao += [Math]::Abs($linha.Valor)
@@ -323,7 +328,8 @@ function Add-Linha($agg, $linha) {
         }
     }
     if ($linha.TipoVenda -eq "VENDA") {
-        if ($linha.StatusFat -eq "FATURADO") { $agg.faturado += $linha.Valor } else { $agg.aFaturar += $linha.Valor }
+        if ($linha.StatusFat -eq "FATURADO") { $agg.faturado += $linha.Valor; [void]$agg.clientesFaturado.Add($linha.CNPJ) }
+        else { $agg.aFaturar += $linha.Valor; [void]$agg.clientesAFaturar.Add($linha.CNPJ) }
         [void]$agg.clientesVenda.Add($linha.CNPJ)
     } elseif ($linha.TipoVenda -eq "DEVOLUCAO" -or $linha.TipoVenda -eq "DEVOLUÇÃO") {
         $agg.devolucao += [Math]::Abs($linha.Valor)
@@ -335,11 +341,14 @@ function Add-Linha($agg, $linha) {
 # Positivacao = clientes com venda no periodo QUE NAO tiveram nenhuma devolucao no mesmo
 # escopo (fornecedor ou geral) - decisao explicita do usuario 2026-07-21: uma devolucao,
 # mesmo parcial, tira o cliente da contagem de positivados (nao so quando o liquido fica <=0).
-function Count-Positivados($agg) {
+# Quebrado em faturado/a-faturar (um cliente pode entrar nos dois se tiver pedidos nos dois
+# status) para o usuario ver a composicao, nao so o total.
+function Count-Set($set, $excluir) {
     $count = 0
-    foreach ($cnpj in $agg.clientesVenda) { if (-not $agg.clientesDevolucao.Contains($cnpj)) { $count++ } }
+    foreach ($cnpj in $set) { if (-not $excluir.Contains($cnpj)) { $count++ } }
     return $count
 }
+function Count-Positivados($agg) { return Count-Set $agg.clientesVenda $agg.clientesDevolucao }
 function ConvertTo-JsonAgg($agg) {
     $out = [ordered]@{
         metaFaturamento = [Math]::Round($agg.metaFaturamento,2)
@@ -349,6 +358,9 @@ function ConvertTo-JsonAgg($agg) {
         devolucao = [Math]::Round($agg.devolucao,2)
         bonificacao = [Math]::Round($agg.bonificacao,2)
         positivacaoRealizado = Count-Positivados $agg
+        positivacaoFaturado = Count-Set $agg.clientesFaturado $agg.clientesDevolucao
+        positivacaoAFaturar = Count-Set $agg.clientesAFaturar $agg.clientesDevolucao
+        clientesComDevolucao = $agg.clientesDevolucao.Count
         porFornecedor = [ordered]@{}
     }
     foreach ($fid in $agg.porFornecedor.Keys) {
@@ -361,6 +373,9 @@ function ConvertTo-JsonAgg($agg) {
             devolucao = [Math]::Round($b.devolucao,2)
             bonificacao = [Math]::Round($b.bonificacao,2)
             positivacaoRealizado = Count-Positivados $b
+            positivacaoFaturado = Count-Set $b.clientesFaturado $b.clientesDevolucao
+            positivacaoAFaturar = Count-Set $b.clientesAFaturar $b.clientesDevolucao
+            clientesComDevolucao = $b.clientesDevolucao.Count
         }
     }
     return $out

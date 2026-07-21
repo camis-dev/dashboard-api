@@ -104,16 +104,22 @@ function paceBadge(pf) {
 function headerCards(agg) {
   const pf = paceFaturamento(agg);
   const pp = pacePositivacao(agg);
-  return `<div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">Falta faturar (vendas+pendente)</div><div class="kpi-value">${fmtBRL(pf.falta)}</div>
-      <div class="kpi-sub">Meta ${fmtBRL(agg.metaFaturamento)} · já projetado ${fmtBRL(agg.faturadoLiquido + agg.aFaturar)}</div></div>
-    <div class="kpi"><div class="kpi-label">Ritmo necessário / dia útil</div><div class="kpi-value">${fmtBRL(pf.necessarioDia)}</div>
-      <div class="kpi-sub">Ritmo médio até agora: ${fmtBRL(pf.atualDia)}/dia — ${paceBadge(pf)}</div></div>
-    <div class="kpi"><div class="kpi-label">Falta positivar (clientes)</div><div class="kpi-value">${fmtInt(pp.falta)}</div>
-      <div class="kpi-sub">Meta ${fmtInt(agg.metaPositivacao)} · já positivados ${fmtInt(agg.positivacaoRealizado)}</div></div>
-    <div class="kpi"><div class="kpi-label">Clientes/dia necessário</div><div class="kpi-value">${pp.necessarioDia.toFixed(1)}</div>
-      <div class="kpi-sub">Ritmo médio até agora: ${pp.atualDia.toFixed(1)}/dia — ${paceBadge(pp)}</div></div>
-  </div>`;
+  return `
+    <div class="kpi-group-label">Faturamento</div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Falta faturar (vendas+pendente)</div><div class="kpi-value">${fmtBRL(pf.falta)}</div>
+        <div class="kpi-sub">Meta ${fmtBRL(agg.metaFaturamento)} · já projetado ${fmtBRL(agg.faturadoLiquido + agg.aFaturar)}</div></div>
+      <div class="kpi"><div class="kpi-label">Ritmo necessário / dia útil</div><div class="kpi-value">${fmtBRL(pf.necessarioDia)}</div>
+        <div class="kpi-sub">Ritmo médio até agora: ${fmtBRL(pf.atualDia)}/dia — ${paceBadge(pf)}</div></div>
+    </div>
+    <div class="kpi-group-label">Positivação (clientes)</div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Falta positivar</div><div class="kpi-value">${fmtInt(pp.falta)}</div>
+        <div class="kpi-sub">Meta ${fmtInt(agg.metaPositivacao)} · já positivados ${fmtInt(agg.positivacaoRealizado)} (${fmtInt(agg.positivacaoFaturado)} faturados, ${fmtInt(agg.positivacaoAFaturar)} a faturar)</div></div>
+      <div class="kpi"><div class="kpi-label">Clientes/dia necessário</div><div class="kpi-value">${pp.necessarioDia.toFixed(1)}</div>
+        <div class="kpi-sub">Ritmo médio até agora: ${pp.atualDia.toFixed(1)}/dia — ${paceBadge(pp)}</div></div>
+    </div>
+  `;
 }
 
 function fornecedorPaceGrid(agg) {
