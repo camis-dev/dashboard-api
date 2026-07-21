@@ -105,6 +105,14 @@ body::before {
   border-bottom: 1px solid var(--line);
 }
 .menu-toggle { display: none; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--blue-deep); }
+.btn-back {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: #fff; border: 1px solid var(--line-strong); color: var(--blue-deep);
+  font-size: 16px; cursor: pointer;
+}
+.btn-back:hover { background: var(--paper-alt); }
+.btn-back:disabled { opacity: .35; cursor: default; }
 .topbar-title { font-size: 19px; font-weight: 800; color: var(--blue-deep); flex: 1; }
 .topbar-actions { display: flex; gap: 8px; }
 
@@ -245,7 +253,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 @media print {
   body { background: #fff !important; }
   body::before { display: none; }
-  .sidebar, .topbar-actions, .menu-toggle { display: none !important; }
+  .sidebar, .topbar-actions, .menu-toggle, .btn-back { display: none !important; }
   .app { display: block; }
   .content { display: block; }
   .view { padding: 0; }

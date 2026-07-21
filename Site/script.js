@@ -141,6 +141,7 @@ function buildNav() {
     el.addEventListener("click", () => { location.hash = el.dataset.hash; document.getElementById("sidebar").classList.remove("open"); });
   });
   document.getElementById("menuToggle").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
+  document.getElementById("btnBack").addEventListener("click", () => history.back());
   document.getElementById("btnExportPdf").addEventListener("click", () => window.print());
   document.getElementById("btnExportExcel").addEventListener("click", exportCurrentViewToExcel);
 }
