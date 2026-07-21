@@ -293,6 +293,7 @@ function New-Agg {
         devolucao = 0.0
         bonificacao = 0.0
         clientesVenda = New-Object System.Collections.Generic.HashSet[string]
+        clientesDevolucao = New-Object System.Collections.Generic.HashSet[string]
         porFornecedor = [ordered]@{}
     }
     return $o
@@ -303,6 +304,7 @@ function Get-FornBucket($agg, $fid) {
             metaFaturamento = 0.0; metaPositivacao = 0.0
             faturado = 0.0; aFaturar = 0.0; devolucao = 0.0; bonificacao = 0.0
             clientesVenda = New-Object System.Collections.Generic.HashSet[string]
+            clientesDevolucao = New-Object System.Collections.Generic.HashSet[string]
         }
     }
     return $agg.porFornecedor[$fid]
@@ -315,6 +317,7 @@ function Add-Linha($agg, $linha) {
             [void]$b.clientesVenda.Add($linha.CNPJ)
         } elseif ($linha.TipoVenda -eq "DEVOLUCAO" -or $linha.TipoVenda -eq "DEVOLUÇÃO") {
             $b.devolucao += [Math]::Abs($linha.Valor)
+            [void]$b.clientesDevolucao.Add($linha.CNPJ)
         } elseif ($linha.TipoVenda -eq "BONIFICACAO" -or $linha.TipoVenda -eq "BONIFICAÇÃO") {
             $b.bonificacao += $linha.Valor
         }
@@ -324,9 +327,18 @@ function Add-Linha($agg, $linha) {
         [void]$agg.clientesVenda.Add($linha.CNPJ)
     } elseif ($linha.TipoVenda -eq "DEVOLUCAO" -or $linha.TipoVenda -eq "DEVOLUÇÃO") {
         $agg.devolucao += [Math]::Abs($linha.Valor)
+        [void]$agg.clientesDevolucao.Add($linha.CNPJ)
     } elseif ($linha.TipoVenda -eq "BONIFICACAO" -or $linha.TipoVenda -eq "BONIFICAÇÃO") {
         $agg.bonificacao += $linha.Valor
     }
+}
+# Positivacao = clientes com venda no periodo QUE NAO tiveram nenhuma devolucao no mesmo
+# escopo (fornecedor ou geral) - decisao explicita do usuario 2026-07-21: uma devolucao,
+# mesmo parcial, tira o cliente da contagem de positivados (nao so quando o liquido fica <=0).
+function Count-Positivados($agg) {
+    $count = 0
+    foreach ($cnpj in $agg.clientesVenda) { if (-not $agg.clientesDevolucao.Contains($cnpj)) { $count++ } }
+    return $count
 }
 function ConvertTo-JsonAgg($agg) {
     $out = [ordered]@{
@@ -336,7 +348,7 @@ function ConvertTo-JsonAgg($agg) {
         aFaturar = [Math]::Round($agg.aFaturar,2)
         devolucao = [Math]::Round($agg.devolucao,2)
         bonificacao = [Math]::Round($agg.bonificacao,2)
-        positivacaoRealizado = $agg.clientesVenda.Count
+        positivacaoRealizado = Count-Positivados $agg
         porFornecedor = [ordered]@{}
     }
     foreach ($fid in $agg.porFornecedor.Keys) {
@@ -348,7 +360,7 @@ function ConvertTo-JsonAgg($agg) {
             aFaturar = [Math]::Round($b.aFaturar,2)
             devolucao = [Math]::Round($b.devolucao,2)
             bonificacao = [Math]::Round($b.bonificacao,2)
-            positivacaoRealizado = $b.clientesVenda.Count
+            positivacaoRealizado = Count-Positivados $b
         }
     }
     return $out
@@ -445,7 +457,7 @@ function Split-MetaPorSegmento($totalMeta, $realizadoAS, $realizadoVarejo) {
 $splitGeral = Split-MetaPorSegmento $totalGeral.metaFaturamento ($geralAS.faturado + $geralAS.aFaturar) ($geralVarejo.faturado + $geralVarejo.aFaturar)
 $geralAS.metaFaturamento = $splitGeral.AS
 $geralVarejo.metaFaturamento = $splitGeral.Varejo
-$splitPos = Split-MetaPorSegmento $totalGeral.metaPositivacao $geralAS.clientesVenda.Count $geralVarejo.clientesVenda.Count
+$splitPos = Split-MetaPorSegmento $totalGeral.metaPositivacao (Count-Positivados $geralAS) (Count-Positivados $geralVarejo)
 $geralAS.metaPositivacao = $splitPos.AS
 $geralVarejo.metaPositivacao = $splitPos.Varejo
 foreach ($fid in $fornecedores.Keys) {
@@ -455,7 +467,7 @@ foreach ($fid in $fornecedores.Keys) {
     $sf = Split-MetaPorSegmento $bTotal.metaFaturamento ($bAS.faturado + $bAS.aFaturar) ($bVarejo.faturado + $bVarejo.aFaturar)
     $bAS.metaFaturamento = $sf.AS
     $bVarejo.metaFaturamento = $sf.Varejo
-    $sp = Split-MetaPorSegmento $bTotal.metaPositivacao $bAS.clientesVenda.Count $bVarejo.clientesVenda.Count
+    $sp = Split-MetaPorSegmento $bTotal.metaPositivacao (Count-Positivados $bAS) (Count-Positivados $bVarejo)
     $bAS.metaPositivacao = $sp.AS
     $bVarejo.metaPositivacao = $sp.Varejo
 }
