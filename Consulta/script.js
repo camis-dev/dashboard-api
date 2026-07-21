@@ -6,6 +6,12 @@ const fmtBRL2 = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", cur
 const fmtDate = (iso) => { const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
+const STATUS_ORDEM = ["BLOQUEADO", "PENDENTE", "MONTADO", "LIBERADO", "FATURADO", "DEVOLVIDO", "MISTO"];
+const STATUS_LABEL = {
+  BLOQUEADO: "Bloqueado", PENDENTE: "Pendente", MONTADO: "Montado",
+  LIBERADO: "Liberado", FATURADO: "Faturado", DEVOLVIDO: "Devolvido", MISTO: "Misto"
+};
+
 (function init() {
   if (!window.DASHBOARD_DATA) {
     document.getElementById("resultados").innerHTML = `<p class="empty-hint">data.js não encontrado. Rode gerar-dados.ps1 primeiro.</p>`;
@@ -38,39 +44,63 @@ function render(termo) {
     el.innerHTML = `<p class="empty-hint">Nenhum pedido encontrado para "${esc(termo)}".</p>`;
     return;
   }
+  matches.sort((a, b) => (a.razaoSocial || "").localeCompare(b.razaoSocial || ""));
   const mostrar = matches.slice(0, MAX_RESULTADOS);
+
+  const porStatus = {};
+  matches.forEach(p => { const s = statusPrincipal(p); porStatus[s] = (porStatus[s]||0) + 1; });
+  const resumoHtml = STATUS_ORDEM.filter(s => porStatus[s]).map(s =>
+    `<span class="resumo-chip status-${s}">${porStatus[s]} ${STATUS_LABEL[s]}</span>`
+  ).join("");
+
   const countMsg = matches.length > MAX_RESULTADOS
     ? `${matches.length} pedidos encontrados — mostrando os ${MAX_RESULTADOS} primeiros. Refine a busca para ver os demais.`
-    : `${matches.length} pedido(s) encontrado(s).`;
-  el.innerHTML = `<div class="resultados-count">${countMsg}</div>` + mostrar.map(pedidoCardHtml).join("");
+    : `${matches.length} pedido(s) encontrado(s)`;
+
+  el.innerHTML = `
+    <div class="resultados-toolbar">
+      <div class="resultados-count">${countMsg}</div>
+      <div class="resultados-resumo">${resumoHtml}</div>
+    </div>
+    <div class="pedido-list">${mostrar.map(pedidoCardHtml).join("")}</div>
+  `;
   el.querySelectorAll(".pedido-card-head").forEach(h => h.addEventListener("click", () => {
     h.parentElement.classList.toggle("open");
   }));
+}
+
+function campo(label, valor) {
+  return `<div class="campo"><span class="campo-label">${esc(label)}</span><span class="campo-valor">${esc(valor)}</span></div>`;
 }
 
 function pedidoCardHtml(p) {
   const status = statusPrincipal(p);
   return `<div class="pedido-card">
     <div class="pedido-card-head">
-      <span class="status-badge status-${esc(status)}">${esc(status)}</span>
-      <div class="pedido-card-info">
-        <div class="linha1">${esc(p.razaoSocial)} <span style="font-weight:400;color:var(--ink-muted)">· ${esc(p.vendedor)} (${esc(p.supervisor)})</span></div>
-        <div class="linha2">
-          ${fmtDate(p.data)} · Pedido Winthor ${esc(p.numeroPedidoWinthor)} · Pedido Clube ${esc(p.numeroPedidoClube)} ·
-          Cód. RCA ${esc(p.codigoRCA)} · Cód. Cliente ${esc(p.codCliente)} · CNPJ ${esc(p.cnpj)}
-        </div>
+      <span class="status-badge status-${esc(status)}">${esc(STATUS_LABEL[status] || status)}</span>
+      <div class="pedido-card-titulo">
+        <div class="razao-social">${esc(p.razaoSocial)}</div>
+        <div class="vendedor-linha">${esc(p.vendedor)} · Equipe ${esc(p.supervisor)}</div>
       </div>
       <div class="pedido-card-valor">${fmtBRL2(p.valorTotal)}</div>
       <div class="pedido-card-toggle">▸</div>
     </div>
+    <div class="campo-grid">
+      ${campo("Data", fmtDate(p.data))}
+      ${campo("Pedido Winthor", p.numeroPedidoWinthor)}
+      ${campo("Pedido Clube", p.numeroPedidoClube)}
+      ${campo("Cód. RCA", p.codigoRCA)}
+      ${campo("Cód. Cliente", p.codCliente)}
+      ${campo("CNPJ", p.cnpj)}
+    </div>
     <div class="pedido-card-body">
       <table><thead><tr>
-        <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th><th>Status Pedido</th><th>Status Bloqueio</th><th class="num">Valor</th>
+        <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th><th>Status Pedido</th><th>Status</th><th class="num">Valor</th>
       </tr></thead><tbody>
         ${p.produtos.map(pr => `<tr>
           <td>${esc(pr.codProduto)}</td><td>${esc(pr.produto)}</td><td>${esc(pr.fornecedor||"—")}</td>
-          <td>${esc(pr.statusPedido)}</td>
-          <td><span class="status-badge status-${esc(pr.statusBloqueio)}">${esc(pr.statusBloqueio)}</span></td>
+          <td>${pr.statusPedido === "FATURADO" ? "Faturado" : "A Faturar"}</td>
+          <td><span class="status-badge status-${esc(pr.statusBloqueio)}">${esc(STATUS_LABEL[pr.statusBloqueio] || pr.statusBloqueio)}</span></td>
           <td class="num">${fmtBRL2(pr.valor)}</td>
         </tr>`).join("")}
       </tbody></table>

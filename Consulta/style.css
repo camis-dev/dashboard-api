@@ -17,9 +17,9 @@
 .btn-back-link { font-size: 12.5px; color: var(--blue-deep); text-decoration: none; font-weight: 600; }
 .btn-back-link:hover { text-decoration: underline; }
 
-.consulta-main { flex: 1; max-width: 980px; width: 100%; margin: 0 auto; padding: 32px 24px 60px; }
+.consulta-main { flex: 1; max-width: 900px; width: 100%; margin: 0 auto; padding: 32px 24px 60px; }
 
-.search-hero { margin-bottom: 26px; }
+.search-hero { margin-bottom: 22px; }
 #buscaPedido {
   width: 100%; font: inherit; font-size: 16px; padding: 16px 20px;
   border-radius: 12px; border: 1px solid var(--line-strong); background: #fff;
@@ -28,19 +28,35 @@
 #buscaPedido:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
 .search-hint { font-size: 12.5px; color: var(--ink-muted); margin-top: 8px; text-align: center; }
 
-.resultados-count { font-size: 13px; color: var(--ink-muted); margin-bottom: 14px; }
+/* ---------- Barra de resumo dos resultados ---------- */
+.resultados-toolbar {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 10px; margin-bottom: 16px; padding: 12px 16px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+}
+.resultados-count { font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.resultados-resumo { display: flex; gap: 8px; flex-wrap: wrap; }
+.resumo-chip {
+  font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap;
+}
 
+.pedido-list { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- Card do pedido ---------- */
 .pedido-card {
   background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
-  box-shadow: var(--shadow); margin-bottom: 14px; overflow: hidden;
+  box-shadow: var(--shadow); overflow: hidden;
 }
 .pedido-card-head {
-  display: flex; align-items: center; gap: 14px; padding: 16px 20px; cursor: pointer;
+  display: grid; grid-template-columns: auto 1fr auto auto;
+  align-items: center; gap: 16px; padding: 16px 20px; cursor: pointer;
 }
 .pedido-card-head:hover { background: var(--paper-alt); }
+
 .status-badge {
-  flex-shrink: 0; font-size: 12px; font-weight: 800; padding: 6px 14px; border-radius: 999px;
-  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+  flex-shrink: 0; font-size: 11.5px; font-weight: 800; padding: 7px 15px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; text-align: center;
 }
 .status-PENDENTE { background: #f1efe9; color: #6b6558; }
 .status-LIBERADO { background: #e3edfb; color: #1c5cab; }
@@ -50,12 +66,21 @@
 .status-DEVOLVIDO { background: #f1e9f7; color: #6b3a94; }
 .status-MISTO { background: #eef1f5; color: #46505c; }
 
-.pedido-card-info { flex: 1; min-width: 0; }
-.pedido-card-info .linha1 { font-weight: 700; font-size: 14px; color: var(--ink); }
-.pedido-card-info .linha2 { font-size: 12.5px; color: var(--ink-muted); margin-top: 2px; }
+.pedido-card-titulo { min-width: 0; }
+.razao-social { font-weight: 700; font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vendedor-linha { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
 .pedido-card-valor { font-weight: 800; font-size: 15px; color: var(--ink); white-space: nowrap; }
 .pedido-card-toggle { color: var(--blue); font-size: 12px; transition: transform .12s ease; flex-shrink: 0; }
 .pedido-card.open .pedido-card-toggle { transform: rotate(90deg); }
+
+/* Grade de campos (Data / Pedido Winthor / Pedido Clube / RCA / Cliente / CNPJ) */
+.campo-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 4px 20px; padding: 0 20px 16px 20px;
+}
+.campo { display: flex; flex-direction: column; gap: 2px; }
+.campo-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); }
+.campo-valor { font-size: 13px; font-weight: 600; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
 .pedido-card-body { display: none; border-top: 1px solid var(--line); padding: 14px 20px 18px; background: var(--paper-alt); }
 .pedido-card.open .pedido-card-body { display: block; }
@@ -63,5 +88,12 @@
 .pedido-card-body th, .pedido-card-body td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); }
 .pedido-card-body th { font-size: 10.5px; text-transform: uppercase; color: var(--ink-muted); background: var(--paper-alt); }
 .pedido-card-body tbody tr:last-child td { border-bottom: none; }
+.pedido-card-body td.num, .pedido-card-body th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .empty-hint { text-align: center; color: var(--ink-muted); padding: 60px 20px; font-size: 14px; }
+
+@media (max-width: 700px) {
+  .pedido-card-head { grid-template-columns: auto 1fr; grid-template-rows: auto auto; }
+  .pedido-card-valor { grid-column: 2; text-align: left; }
+  .pedido-card-toggle { display: none; }
+}
