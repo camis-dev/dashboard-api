@@ -1,0 +1,4 @@
+# Bases brutas (dados sensiveis de origem - nunca versionar)
+Bases/
+*.xls
+*.xlsx

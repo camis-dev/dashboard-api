@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard API — Acompanhamento Comercial</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">API</div>
+      <div class="brand-text">
+        <strong>Dashboard API</strong>
+        <span id="periodoLabel">carregando...</span>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <div id="ultimaAtualizacao">—</div>
+      <div style="margin-top:8px"><a href="../Ritmo/index.html" style="color:#eaf2ff;font-size:12px">Ritmo diário para bater a meta →</a></div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
+      <div class="topbar-title" id="pageTitle">Geral API Total</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" id="btnExportExcel">Exportar Excel</button>
+        <button class="btn btn-primary" id="btnExportPdf">Exportar PDF</button>
+      </div>
+    </header>
+    <div class="view" id="view">
+      <p class="loading">Carregando dados...</p>
+    </div>
+  </main>
+</div>
+<script src="data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

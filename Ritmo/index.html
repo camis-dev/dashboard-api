@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ritmo Diário — Dashboard API</title>
+<link rel="stylesheet" href="../Site/style.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">⏱</div>
+      <div class="brand-text">
+        <strong>Ritmo Diário</strong>
+        <span id="periodoLabel">carregando...</span>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <div id="diasInfo">—</div>
+      <div style="margin-top:8px"><a href="../Site/index.html" style="color:#eaf2ff;font-size:12px">← Voltar ao Dashboard API</a></div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <button class="menu-toggle" id="menuToggle" aria-label="Menu">☰</button>
+      <div class="topbar-title" id="pageTitle">Ritmo — Geral API Total</div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" id="btnExportExcel">Exportar Excel</button>
+        <button class="btn btn-primary" id="btnExportPdf">Exportar PDF</button>
+      </div>
+    </header>
+    <div class="view" id="view">
+      <p class="loading">Carregando dados...</p>
+    </div>
+  </main>
+</div>
+<script src="../Site/data.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
