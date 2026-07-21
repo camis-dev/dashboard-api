@@ -235,14 +235,6 @@ function renderSupervisorVendas(body, sup) {
     <div class="card">${fornecedorBars(sup.geral)}</div>
     <div class="card">${fornecedorTable(sup.geral)}</div>
 
-    <div class="section-title"><span class="bar"></span>Segmento de cliente (AS x Varejo)</div>
-    <div class="grid-2">
-      <div class="card"><div class="card-head"><h3>AS</h3><span class="hint">${pct(sup.segmentos.AS.faturadoLiquido, sup.segmentos.AS.faturadoLiquido+sup.segmentos.Varejo.faturadoLiquido)}% do time</span></div>
-        ${miniStats(sup.segmentos.AS)}</div>
-      <div class="card"><div class="card-head"><h3>Varejo</h3><span class="hint">${pct(sup.segmentos.Varejo.faturadoLiquido, sup.segmentos.AS.faturadoLiquido+sup.segmentos.Varejo.faturadoLiquido)}% do time</span></div>
-        ${miniStats(sup.segmentos.Varejo)}</div>
-    </div>
-
     <div class="section-title"><span class="bar"></span>Vendedores da equipe (${vendedores.length})</div>
     <div class="vendedor-list">
       ${vendedores.map(v => {
@@ -258,12 +250,6 @@ function renderSupervisorVendas(body, sup) {
     </div>
   `;
   body.querySelectorAll(".vendedor-card").forEach(el => el.addEventListener("click", () => location.hash = el.dataset.href));
-}
-function miniStats(agg) {
-  return `<div class="kpi-grid" style="grid-template-columns:1fr 1fr">
-    ${kpiCard("Faturado líq.", fmtBRL(agg.faturadoLiquido))}
-    ${kpiCard("A Faturar", fmtBRL(agg.aFaturar))}
-  </div>`;
 }
 
 // ---------------------------------------------------------------------------
