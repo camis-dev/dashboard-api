@@ -190,7 +190,7 @@ for ($r = 2; $r -le $rows8; $r++) {
         if ($d -gt $maxDate) { $maxDate = $d }
     }
 }
-$primeiroDiaMes = Get-Date -Year $maxDate.Year -Month $maxDate.Month -Day 1
+$primeiroDiaMes = (Get-Date -Year $maxDate.Year -Month $maxDate.Month -Day 1).Date
 $ultimoDiaMes = $primeiroDiaMes.AddMonths(1).AddDays(-1)
 Write-Host "  Periodo vigente: $($primeiroDiaMes.ToString('MM/yyyy')) (dados ate $($maxDate.ToString('dd/MM/yyyy')))"
 
@@ -310,6 +310,84 @@ foreach ($l in $linhas) {
     if (-not $pedidoWinthorToCliente.ContainsKey($l.NumPedWinthor)) {
         $pedidoWinthorToCliente[$l.NumPedWinthor] = @{ CodCliente = $l.CodCliente; CNPJ = $l.CNPJ; NomeCliente = $l.NomeCliente }
     }
+}
+
+# ---------------------------------------------------------------------------
+# 5b. Bases 8022 de meses anteriores (ex.: "8022 - Jun.xls") - so para a Consulta
+# de Pedidos. O dashboard/devolucoes/cortes continuam restritos ao mes vigente
+# (o que esta em "8022 - geral.xls"), mas o vendedor precisa achar pedidos
+# faturados em meses anteriores na Consulta - motivo pelo qual o usuario pediu
+# para incluir essas bases extras (2026-07-22). Mesmo layout de colunas do
+# "8022 - geral.xls" (confirmado pelo usuario). Qualquer arquivo "8022 - *.xls"
+# (exceto o "geral") na pasta Bases entra automaticamente aqui, para nao precisar
+# tocar no pipeline de novo no proximo mes historico que for adicionado.
+#
+# Descoberta ao ligar (2026-07-22): "8022 - Jun.xls" nao e um export limpo so de
+# Junho - e uma janela movel que mistura Junho E Julho (33903 linhas de 06/2026 +
+# 31632 de 07/2026 nesse arquivo). Detectar "o mes da data maxima" (como se faz
+# pra base principal) pegaria Julho de novo - duplicando o que "8022 - geral.xls"
+# ja cobre (e esse e' o mais atualizado pro mes vigente, roda toda hora). Por
+# isso o corte aqui e' fixo: mantém so linhas ANTERIORES ao mes vigente
+# ($primeiroDiaMes, calculado a partir da base principal la em cima) - pega
+# Junho (e qualquer outro mes mais antigo que apareca em outro arquivo historico)
+# sem duplicar Julho.
+# ---------------------------------------------------------------------------
+$linhasHistorico = New-Object System.Collections.Generic.List[object]
+$arquivosHistorico = @(Get-ChildItem -Path $basesPath -Filter "8022 - *.xls" | Where-Object { $_.Name -ne "8022 - geral.xls" })
+foreach ($arqH in $arquivosHistorico) {
+    Write-Host "Lendo base historica $($arqH.Name) (so para Consulta de Pedidos)..."
+    $excelH = New-Object -ComObject Excel.Application
+    $excelH.Visible = $false
+    $excelH.DisplayAlerts = $false
+    $wbH = $excelH.Workbooks.Open($arqH.FullName, $null, $true)
+    $wsH = $wbH.Worksheets.Item(1)
+    $rowsH = $wsH.UsedRange.Rows.Count
+    $arrH = $wsH.UsedRange.Value2
+
+    $lidasH = 0
+    for ($r = 2; $r -le $rowsH; $r++) {
+        $vData = $arrH[$r,2]
+        if (-not ($vData -is [double])) { continue }
+        $data = [datetime]::FromOADate($vData)
+        if ($data -ge $primeiroDiaMes) { continue }
+
+        $codSupervisorRawValH = $arrH[$r,19]
+        $codSupervisorH = "OUTROS"
+        if ($codSupervisorRawValH -is [double]) {
+            $csFoldedH = "$([int]$codSupervisorRawValH)"
+            if ($foldSupervisor.ContainsKey($csFoldedH)) { $csFoldedH = $foldSupervisor[$csFoldedH] }
+            if ($supervisoresInfo.Contains($csFoldedH)) { $codSupervisorH = $csFoldedH }
+        }
+        $codprodH = "$($arrH[$r,24])"
+        $fornH = $null
+        if ($codprodToForn.ContainsKey($codprodH)) { $fornH = $codprodToForn[$codprodH] }
+
+        $linhasHistorico.Add([pscustomobject]@{
+            Data = $data
+            CodCliente = "$($arrH[$r,3])"
+            NomeCliente = "$($arrH[$r,4])".Trim()
+            CNPJ = "$($arrH[$r,5])"
+            SegTeam = $null
+            NumPedRCA = "$($arrH[$r,11])"
+            NumPedWinthor = "$($arrH[$r,10])"
+            StatusFat = Remove-Diacritics("$($arrH[$r,15])").ToUpper().Trim()
+            StatusBloqueio = Remove-Diacritics("$($arrH[$r,16])").ToUpper().Trim()
+            CodVendedor = "$([int]$arrH[$r,17])"
+            NomeVendedor = "$($arrH[$r,18])".Trim()
+            CodSupervisor = $codSupervisorH
+            CodProd = $codprodH
+            DescProduto = "$($arrH[$r,25])".Trim()
+            UnidVendidas = Parse-ValorBR $arrH[$r,27]
+            Valor = Parse-ValorBR $arrH[$r,31]
+            TipoVenda = Remove-Diacritics("$($arrH[$r,32])").ToUpper().Trim()
+            Fornecedor = $fornH
+        })
+        $lidasH++
+    }
+    $wbH.Close($false)
+    $excelH.Quit()
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excelH) | Out-Null
+    Write-Host "  $lidasH linhas lidas (anteriores a $($primeiroDiaMes.ToString('MM/yyyy')))"
 }
 
 # ---------------------------------------------------------------------------
@@ -675,7 +753,9 @@ Write-Host "  $corteLinhasCount linhas de corte lidas"
 # no resto do site.
 # ---------------------------------------------------------------------------
 Write-Host "Montando consulta de pedidos..."
-$consultaLinhas = $linhas | Where-Object { $_.TipoVenda -eq "VENDA" }
+# Consulta cobre o mes vigente + qualquer base historica extra (secao 5b) - diferente do
+# dashboard/devolucoes/cortes, que ficam restritos so ao mes vigente.
+$consultaLinhas = @($linhas | Where-Object { $_.TipoVenda -eq "VENDA" }) + @($linhasHistorico | Where-Object { $_.TipoVenda -eq "VENDA" })
 $consultaGrupos = @{}
 foreach ($l in $consultaLinhas) {
     $cs = $l.CodSupervisor
@@ -691,7 +771,7 @@ foreach ($l in $consultaLinhas) {
         valor = [Math]::Round($l.Valor,2)
     })
 }
-Write-Host "  $($consultaGrupos.Count) pedidos distintos no mes"
+Write-Host "  $($consultaGrupos.Count) pedidos distintos (mes vigente + historico)"
 
 # ---------------------------------------------------------------------------
 # 9. Periodo / dias uteis (para o Ritmo)
