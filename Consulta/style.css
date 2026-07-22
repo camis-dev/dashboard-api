@@ -90,6 +90,23 @@
 .pedido-card-body tbody tr:last-child td { border-bottom: none; }
 .pedido-card-body td.num, .pedido-card-body th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* ---------- Corte anexado a um pedido ---------- */
+.badge-corte {
+  flex-shrink: 0; font-size: 11.5px; font-weight: 800; padding: 7px 15px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; text-align: center;
+  background: #fbe8d9; color: #8a5a3b;
+}
+.corte-subtitulo { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #8a5a3b; margin: 14px 0 8px; }
+table.corte-subtable { border: 1px solid #ecd9c6 !important; }
+table.corte-subtable th { background: #fbf3ea !important; }
+
+/* ---------- Devolução por cliente (sem pedido vinculado) ---------- */
+.secao-titulo-consulta {
+  font-size: 13px; font-weight: 800; color: var(--ink); margin: 26px 0 12px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.hint-inline { font-size: 11.5px; font-weight: 500; color: var(--ink-muted); text-transform: none; }
+.devolucao-card { border-left: 3px solid #6b3a94; }
+
 /* ---------- Régua/legenda da ordem do processo ---------- */
 .legenda-processo {
   background: var(--paper); border: 1px solid var(--line); border-radius: 12px;

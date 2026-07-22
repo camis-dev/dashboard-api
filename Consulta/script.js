@@ -68,7 +68,12 @@ function render(termo) {
       .join(" ").toLowerCase();
     return alvo.includes(termo);
   });
-  if (!matches.length) {
+  const devMatches = (DATA.consultaDevolucoes || []).filter(d => {
+    const alvo = [d.cnpj, d.codCliente, d.codigoRCA, d.supervisor, d.razaoSocial, d.vendedor].join(" ").toLowerCase();
+    return alvo.includes(termo);
+  });
+
+  if (!matches.length && !devMatches.length) {
     el.innerHTML = `<p class="empty-hint">Nenhum pedido encontrado para "${esc(termo)}".</p>`;
     return;
   }
@@ -85,13 +90,22 @@ function render(termo) {
     ? `${matches.length} pedidos encontrados — mostrando os ${MAX_RESULTADOS} primeiros. Refine a busca para ver os demais.`
     : `${matches.length} pedido(s) encontrado(s)`;
 
-  el.innerHTML = `
+  const pedidosSecaoHtml = matches.length ? `
     <div class="resultados-toolbar">
       <div class="resultados-count">${countMsg}</div>
       <div class="resultados-resumo">${resumoHtml}</div>
     </div>
     <div class="pedido-list">${mostrar.map(pedidoCardHtml).join("")}</div>
-  `;
+  ` : `<p class="empty-hint">Nenhum pedido encontrado para "${esc(termo)}" — veja as devoluções abaixo.</p>`;
+
+  const devSecaoHtml = devMatches.length ? `
+    <div class="secao-titulo-consulta">Devoluções no período
+      <span class="hint-inline">a base não vincula a devolução a um pedido específico — agrupado por cliente</span>
+    </div>
+    <div class="pedido-list">${devMatches.map(devolucaoCardHtml).join("")}</div>
+  ` : "";
+
+  el.innerHTML = `${pedidosSecaoHtml}${devSecaoHtml}`;
   el.querySelectorAll(".pedido-card-head").forEach(h => h.addEventListener("click", () => {
     h.parentElement.classList.toggle("open");
   }));
@@ -103,9 +117,11 @@ function campo(label, valor) {
 
 function pedidoCardHtml(p) {
   const status = statusPrincipal(p);
+  const temCorte = p.produtosCortados && p.produtosCortados.length;
   return `<div class="pedido-card">
     <div class="pedido-card-head">
       <span class="status-badge status-${esc(status)}">${esc(STATUS_LABEL[status] || status)}</span>
+      ${temCorte ? `<span class="badge-corte" title="Este pedido teve produto(s) cortado(s)">Corte</span>` : ""}
       <div class="pedido-card-titulo">
         <div class="razao-social">${esc(p.razaoSocial)}</div>
         <div class="vendedor-linha">${esc(p.vendedor)} · Equipe ${esc(p.supervisor)}</div>
@@ -129,6 +145,47 @@ function pedidoCardHtml(p) {
           <td>${esc(pr.codProduto)}</td><td>${esc(pr.produto)}</td><td>${esc(pr.fornecedor||"—")}</td>
           <td>${pr.statusPedido === "FATURADO" ? "Faturado" : "A Faturar"}</td>
           <td><span class="status-badge status-${esc(pr.statusBloqueio)}">${esc(STATUS_LABEL[pr.statusBloqueio] || pr.statusBloqueio)}</span></td>
+          <td class="num">${fmtBRL2(pr.valor)}</td>
+        </tr>`).join("")}
+      </tbody></table>
+      ${temCorte ? `
+        <div class="corte-subtitulo">Produtos com corte neste pedido</div>
+        <table class="corte-subtable"><thead><tr>
+          <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th><th>Embalagem</th><th class="num">Qt. Corte</th><th class="num">Preço Unit.</th><th class="num">Valor</th>
+        </tr></thead><tbody>
+          ${p.produtosCortados.map(pr => `<tr>
+            <td>${esc(pr.codProduto)}</td><td>${esc(pr.produto)}</td><td>${esc(pr.fornecedor||"—")}</td>
+            <td>${esc(pr.embalagem)}</td><td class="num">${Math.round(pr.qtCorte||0).toLocaleString("pt-BR")}</td>
+            <td class="num">${fmtBRL2(pr.precoUnit)}</td><td class="num">${fmtBRL2(pr.valor)}</td>
+          </tr>`).join("")}
+        </tbody></table>
+      ` : ""}
+    </div>
+  </div>`;
+}
+
+function devolucaoCardHtml(d) {
+  return `<div class="pedido-card devolucao-card">
+    <div class="pedido-card-head">
+      <span class="status-badge status-DEVOLVIDO">Devolução</span>
+      <div class="pedido-card-titulo">
+        <div class="razao-social">${esc(d.razaoSocial)}</div>
+        <div class="vendedor-linha">${esc(d.vendedor)} · Equipe ${esc(d.supervisor)}</div>
+      </div>
+      <div class="pedido-card-valor">${fmtBRL2(d.valorTotal)}</div>
+      <div class="pedido-card-toggle">▸</div>
+    </div>
+    <div class="campo-grid">
+      ${campo("Cód. RCA", d.codigoRCA)}
+      ${campo("Cód. Cliente", d.codCliente)}
+      ${campo("CNPJ", d.cnpj)}
+    </div>
+    <div class="pedido-card-body">
+      <table><thead><tr>
+        <th>Data</th><th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th><th class="num">Valor devolvido</th>
+      </tr></thead><tbody>
+        ${d.produtos.map(pr => `<tr>
+          <td>${fmtDate(pr.data)}</td><td>${esc(pr.codProduto)}</td><td>${esc(pr.produto)}</td><td>${esc(pr.fornecedor||"—")}</td>
           <td class="num">${fmtBRL2(pr.valor)}</td>
         </tr>`).join("")}
       </tbody></table>

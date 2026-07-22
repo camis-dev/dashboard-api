@@ -773,6 +773,61 @@ foreach ($l in $consultaLinhas) {
 }
 Write-Host "  $($consultaGrupos.Count) pedidos distintos (mes vigente + historico)"
 
+# Anexa produtos cortados aos pedidos da Consulta - usa a MESMA chave "pedido|cliente"
+# de Get-Or-NovoGrupo, entao um pedido que teve corte aparece automaticamente com os
+# produtos cortados junto do resto (o corte e' sempre dentro de um pedido de VENDA real,
+# diferente da devolucao abaixo, que a base nao vincula a nenhum numero de pedido).
+$pedidosComCorte = 0
+foreach ($key in $corteGeralGrupos.Keys) {
+    if ($consultaGrupos.ContainsKey($key)) {
+        $consultaGrupos[$key].produtosCortados = $corteGeralGrupos[$key].produtos
+        $pedidosComCorte++
+    }
+}
+Write-Host "  $pedidosComCorte pedidos com produtos cortados"
+
+# Devolucao por cliente, para a Consulta de Pedidos (busca por CNPJ/RCA/supervisor).
+# A base 8022 NAO registra o numero do pedido original da devolucao (NUMERO PED. WINTHOR/
+# RCA vem com valores fixos "1"/"2" em toda linha de devolucao, nao um numero real - achado
+# ao investigar isso) - por isso nao da pra anexar a devolucao a um pedido especifico como
+# se faz com o corte acima. Em vez disso, agrupa por CNPJ (cobrindo mes vigente + historico,
+# igual a consulta de pedidos) e mostra como um bloco proprio "Devolucao no periodo".
+Write-Host "Montando devolucoes para Consulta de Pedidos..."
+$devLinhasConsulta = @($linhas | Where-Object { $_.TipoVenda -eq "DEVOLUCAO" -or $_.TipoVenda -eq "DEVOLUÇÃO" }) + @($linhasHistorico | Where-Object { $_.TipoVenda -eq "DEVOLUCAO" -or $_.TipoVenda -eq "DEVOLUÇÃO" })
+$devolucaoPorClienteDict = @{}
+foreach ($l in $devLinhasConsulta) {
+    $key = $l.CNPJ
+    if (-not $devolucaoPorClienteDict.ContainsKey($key)) {
+        $nomeSupDev = if ($supervisoresInfo.Contains($l.CodSupervisor)) { $supervisoresInfo[$l.CodSupervisor].nome } else { "Outros/Interno" }
+        $devolucaoPorClienteDict[$key] = [ordered]@{
+            cnpj = $l.CNPJ
+            codCliente = $l.CodCliente
+            razaoSocial = $l.NomeCliente
+            codigoRCA = $l.CodVendedor
+            vendedor = $l.NomeVendedor
+            supervisor = $nomeSupDev
+            valorTotal = 0.0
+            produtos = New-Object System.Collections.Generic.List[object]
+        }
+    }
+    $gDev = $devolucaoPorClienteDict[$key]
+    $valorAbsDev = [Math]::Round([Math]::Abs($l.Valor),2)
+    $gDev.valorTotal = [Math]::Round($gDev.valorTotal + $valorAbsDev, 2)
+    $gDev.produtos.Add([ordered]@{
+        data = $l.Data.ToString("yyyy-MM-dd")
+        codProduto = $l.CodProd
+        produto = $l.DescProduto
+        fornecedor = $l.Fornecedor
+        valor = $valorAbsDev
+    })
+}
+$consultaDevolucoes = New-Object System.Collections.Generic.List[object]
+foreach ($gDev in ($devolucaoPorClienteDict.Values | Sort-Object { $_.valorTotal } -Descending)) {
+    $gDev.produtos = @($gDev.produtos | Sort-Object { $_.data } -Descending)
+    $consultaDevolucoes.Add($gDev)
+}
+Write-Host "  $($consultaDevolucoes.Count) clientes com devolucao (mes vigente + historico)"
+
 # ---------------------------------------------------------------------------
 # 9. Periodo / dias uteis (para o Ritmo)
 # ---------------------------------------------------------------------------
@@ -826,7 +881,11 @@ function Sum-GrupoValor($grupos) {
     return $soma
 }
 function Grupos-ParaSaida($gruposDict) {
-    return @($gruposDict.Values | ForEach-Object { $_.produtos = @($_.produtos | Sort-Object { $_.produto }); $_ } | Sort-Object { $_.data } -Descending)
+    return @($gruposDict.Values | ForEach-Object {
+        $_.produtos = @($_.produtos | Sort-Object { $_.produto })
+        if ($_.Contains("produtosCortados")) { $_.produtosCortados = @($_.produtosCortados | Sort-Object { $_.produto }) }
+        $_
+    } | Sort-Object { $_.data } -Descending)
 }
 
 $devTotalAbs = [Math]::Abs([Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2))
@@ -888,6 +947,7 @@ $dataJson = [ordered]@{
     devolucoes = $devolucoesOut
     cortes = $cortesOut
     consultaPedidos = Grupos-ParaSaida $consultaGrupos
+    consultaDevolucoes = $consultaDevolucoes
     outrosItensValor = [Math]::Round($outrosValor,2)
 }
 
