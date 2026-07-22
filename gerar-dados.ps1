@@ -407,6 +407,16 @@ foreach ($arqH in $arquivosHistorico) {
     Write-Host "  $lidasH linhas lidas (anteriores a $($primeiroDiaMes.ToString('MM/yyyy')))"
 }
 
+# Estende o lookup pedido->cliente (construido so com o mes vigente, linha 321) com os
+# pedidos historicos - senao um corte arquivado de mes anterior (secao 8b, mais abaixo)
+# nao acha o cliente e fica com a chave "pedido|" (vazia), que nunca bate com a entrada
+# ja existente em consultaGrupos pra aquele mesmo pedido (que tem o cliente de verdade).
+foreach ($l in $linhasHistorico) {
+    if (-not $pedidoWinthorToCliente.ContainsKey($l.NumPedWinthor)) {
+        $pedidoWinthorToCliente[$l.NumPedWinthor] = @{ CodCliente = $l.CodCliente; CNPJ = $l.CNPJ; NomeCliente = $l.NomeCliente }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # 6. Funcoes de agregacao
 # ---------------------------------------------------------------------------
@@ -761,7 +771,99 @@ $excel2.Quit()
 Write-Host "  $corteLinhasCount linhas de corte lidas"
 
 # ---------------------------------------------------------------------------
-# 8b. Consulta de Pedidos (status operacional - novo na 8022, para vendedores
+# 8b. Cortes de meses anteriores (ex.: "Cortes - Julho.xls") - so para a Consulta
+# de Pedidos, mesma logica da secao 5b para o 8022 historico: o dashboard/aba
+# Cortes continuam restritos ao mes vigente (corteGeralGrupos, acima), mas um
+# pedido antigo que teve corte tambem deve aparecer na Consulta. Usa a MESMA
+# rotina de parsing da secao 8, extraida numa funcao, escrevendo num dict
+# SEPARADO (corteConsultaGrupos) que comeca como copia do mes vigente + acrescenta
+# os meses arquivados - nunca mistura com corteGeralGrupos, que precisa continuar
+# so com o mes vigente para o dashboard nao ficar errado.
+# ---------------------------------------------------------------------------
+function Parse-CorteFile($caminhoArquivo, $gruposDestino) {
+    $excelC = New-Object -ComObject Excel.Application
+    $excelC.Visible = $false
+    $excelC.DisplayAlerts = $false
+    $wbC = $excelC.Workbooks.Open($caminhoArquivo, $null, $true)
+    $wsC = $wbC.Worksheets.Item(1)
+    $rowsC = $wsC.UsedRange.Rows.Count
+    $arrC = $wsC.UsedRange.Value2
+
+    $curSupCod = "OUTROS"; $curSupNome = "Outros/Interno"
+    $curRcaCod = $null; $curRcaNome = $null
+    $count = 0
+
+    for ($r = 1; $r -le $rowsC; $r++) {
+        $c1 = $arrC[$r,1]; $c2 = $arrC[$r,2]; $c3 = $arrC[$r,3]; $c5 = $arrC[$r,5]
+
+        if ("$c2" -eq "SUPERVISOR :" -or "$c1" -eq "SUPERVISOR :") {
+            $codRaw = "$([int]$c3)"
+            $curSupCod = if ($foldSupervisor.ContainsKey($codRaw)) { $foldSupervisor[$codRaw] } else { $codRaw }
+            if (-not $supervisoresInfo.Contains($curSupCod)) { $curSupCod = "OUTROS" }
+            $curSupNome = if ($supervisoresInfo.Contains($curSupCod)) { $supervisoresInfo[$curSupCod].nome } else { "Outros/Interno" }
+            continue
+        }
+        if ("$c2" -eq "RCA :") {
+            $curRcaCod = "$([int]$c3)"
+            $curRcaNome = "$c5"
+            continue
+        }
+        if ($c1 -is [double] -and $c2 -is [double] -and $c3 -is [double]) {
+            $count++
+            $numPedWinthorC = "$([int64]$c2)"
+            $codProdC = "$([int]$c3)"
+            $qtC = Parse-ValorBR $arrC[$r,12]
+            $valorC = Parse-ValorBR $arrC[$r,15]
+            $clienteC = $pedidoWinthorToCliente[$numPedWinthorC]
+
+            $linhaC = [pscustomobject]@{
+                Data = [datetime]::FromOADate($c1)
+                CodCliente = if ($clienteC) { $clienteC.CodCliente } else { "" }
+                NomeCliente = if ($clienteC) { $clienteC.NomeCliente } else { "Cliente não identificado" }
+                CNPJ = if ($clienteC) { $clienteC.CNPJ } else { "" }
+                SegTeam = $null
+                NumPedRCA = ""
+                NumPedWinthor = $numPedWinthorC
+                CodVendedor = $curRcaCod
+                NomeVendedor = $curRcaNome
+                CodSupervisor = $curSupCod
+            }
+            $fornC = $null
+            if ($codprodToForn.ContainsKey($codProdC)) { $fornC = $codprodToForn[$codProdC] }
+
+            $gDest = Get-Or-NovoGrupo $gruposDestino $linhaC $curSupNome
+            $gDest.valorTotal = [Math]::Round($gDest.valorTotal + $valorC, 2)
+            $gDest.produtos.Add([ordered]@{
+                codProduto = $codProdC
+                produto = "$($arrC[$r,4])".Trim()
+                fornecedor = $fornC
+                embalagem = "$($arrC[$r,9])".Trim()
+                qtCorte = $qtC
+                precoUnit = Parse-ValorBR $arrC[$r,13]
+                valor = [Math]::Round($valorC,2)
+            })
+        }
+    }
+    $wbC.Close($false)
+    $excelC.Quit()
+    [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excelC) | Out-Null
+    return $count
+}
+
+$corteConsultaGrupos = @{}
+foreach ($k in $corteGeralGrupos.Keys) { $corteConsultaGrupos[$k] = $corteGeralGrupos[$k] }
+$arquivosCorteHistorico = @(Get-ChildItem -Path $basesPath -Filter "Cortes - *.xls" -ErrorAction SilentlyContinue)
+if (Test-Path $armazenamentoPath) {
+    $arquivosCorteHistorico += @(Get-ChildItem -Path $armazenamentoPath -Filter "Cortes - *.xls" -ErrorAction SilentlyContinue)
+}
+foreach ($arqCorteH in $arquivosCorteHistorico) {
+    Write-Host "Lendo corte historico $($arqCorteH.Name) (so para Consulta de Pedidos)..."
+    $lidasCorteH = Parse-CorteFile $arqCorteH.FullName $corteConsultaGrupos
+    Write-Host "  $lidasCorteH linhas de corte lidas"
+}
+
+# ---------------------------------------------------------------------------
+# 8c. Consulta de Pedidos (status operacional - novo na 8022, para vendedores
 # consultarem rapidamente o andamento de qualquer pedido da empresa toda).
 # Mesmo agrupamento cliente+pedido, mas cobre TODAS as vendas (nao so fornecedor
 # API ou itens de corte) e carrega STATUS BLOQUEIO por produto - a informacao
@@ -794,10 +896,12 @@ Write-Host "  $($consultaGrupos.Count) pedidos distintos (mes vigente + historic
 # de Get-Or-NovoGrupo, entao um pedido que teve corte aparece automaticamente com os
 # produtos cortados junto do resto (o corte e' sempre dentro de um pedido de VENDA real,
 # diferente da devolucao abaixo, que a base nao vincula a nenhum numero de pedido).
+# Usa corteConsultaGrupos (mes vigente + arquivados), nao corteGeralGrupos (que fica so
+# no mes vigente, para o dashboard/aba Cortes nao misturar meses).
 $pedidosComCorte = 0
-foreach ($key in $corteGeralGrupos.Keys) {
+foreach ($key in $corteConsultaGrupos.Keys) {
     if ($consultaGrupos.ContainsKey($key)) {
-        $consultaGrupos[$key].produtosCortados = $corteGeralGrupos[$key].produtos
+        $consultaGrupos[$key].produtosCortados = $corteConsultaGrupos[$key].produtos
         $pedidosComCorte++
     }
 }
