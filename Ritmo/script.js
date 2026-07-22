@@ -1,10 +1,10 @@
-// Ritmo Diário — quanto cada vendedor precisa positivar e faturar por dia útil restante
+// Ritmo Diário — quanto cada vendedor precisa faturar e positivar por dia útil restante
 // para bater a meta do mês. Reaproveita o mesmo data.json do Dashboard API (Site/).
 let DATA = null;
 
 const fmtBRL = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtBRL2 = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const fmtInt = (v) => (v || 0).toLocaleString("pt-BR");
+const fmtInt = (v) => Math.round(v || 0).toLocaleString("pt-BR");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clampPct = (p) => Math.max(0, Math.min(100, p));
 
@@ -25,12 +25,7 @@ const clampPct = (p) => Math.max(0, Math.min(100, p));
 
 function buildNav() {
   const nav = document.getElementById("nav");
-  const items = [
-    { hash: "#/total", label: "Geral API Total", cor: "#1f5fa8" },
-    { hash: "#/as", label: "Geral AS", cor: "#4a3aa7" },
-    { hash: "#/varejo", label: "Geral Varejo", cor: "#eb6834" },
-  ];
-  let html = items.map(it => `<div class="nav-item" data-hash="${it.hash}"><span class="nav-dot" style="background:${it.cor}"></span>${esc(it.label)}</div>`).join("");
+  let html = `<div class="nav-item" data-hash="#/total"><span class="nav-dot" style="background:#1f5fa8"></span>Geral API Total</div>`;
   html += `<div class="nav-section-label">Supervisores</div>`;
   html += DATA.supervisores.map(s => `<div class="nav-item" data-hash="#/sup/${s.codigo}"><span class="nav-dot" style="background:${s.cor}"></span>${esc(s.nome)}</div>`).join("");
   nav.innerHTML = html;
@@ -53,8 +48,6 @@ function render() {
   const title = document.getElementById("pageTitle");
 
   if (parts[0] === "total") { setActiveNav("#/total"); title.textContent = "Ritmo — Geral API Total"; renderGeral(view, DATA.totalGeral); }
-  else if (parts[0] === "as") { setActiveNav("#/as"); title.textContent = "Ritmo — Geral AS"; renderGeral(view, DATA.geralAS); }
-  else if (parts[0] === "varejo") { setActiveNav("#/varejo"); title.textContent = "Ritmo — Geral Varejo"; renderGeral(view, DATA.geralVarejo); }
   else if (parts[0] === "sup") {
     const sup = DATA.supervisores.find(s => s.codigo === parts[1]);
     if (!sup) { view.innerHTML = `<p class="empty-state">Supervisor não encontrado.</p>`; return; }
@@ -73,6 +66,19 @@ function render() {
 }
 
 // ---------------------------------------------------------------------------
+// Último dia útil do mês vigente (segunda a sábado) — usado como prazo de referência
+// ---------------------------------------------------------------------------
+function ultimoDiaUtilLabel() {
+  const ano = DATA.periodo.ano, mes = DATA.periodo.mes;
+  const d = new Date(ano, mes, 0); // dia 0 do mes seguinte = ultimo dia do mes vigente
+  while (d.getDay() === 0) d.setDate(d.getDate() - 1); // domingo nao conta como dia util
+  const dias = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dias[d.getDay()]}, ${dd}/${mm}`;
+}
+
+// ---------------------------------------------------------------------------
 // Cálculo do ritmo
 // ---------------------------------------------------------------------------
 function paceFaturamento(agg) {
@@ -82,14 +88,17 @@ function paceFaturamento(agg) {
   const dPass = DATA.periodo.diasUteisPassados;
   const necessarioDia = dRest > 0 ? falta / dRest : falta;
   const atualDia = dPass > 0 ? proj / dPass : proj;
-  return { falta, necessarioDia, atualDia, bateu: falta <= 0 };
+  return { falta, necessarioDia, atualDia, bateu: falta <= 0, proj };
 }
 function pacePositivacao(agg) {
   const falta = Math.max(0, agg.metaPositivacao - agg.positivacaoRealizado);
   const dRest = DATA.periodo.diasUteisRestantes;
   const dPass = DATA.periodo.diasUteisPassados;
-  const necessarioDia = dRest > 0 ? falta / dRest : falta;
-  const atualDia = dPass > 0 ? agg.positivacaoRealizado / dPass : agg.positivacaoRealizado;
+  // Positivação é sempre número inteiro de clientes: arredonda pra cima o "necessário"
+  // (senão o ritmo fica sistematicamente abaixo do que precisa pra bater a meta) e
+  // pra mais próximo o "atual" (é só a média já realizada, nao precisa de folga).
+  const necessarioDia = Math.ceil(dRest > 0 ? falta / dRest : falta);
+  const atualDia = Math.round(dPass > 0 ? agg.positivacaoRealizado / dPass : agg.positivacaoRealizado);
   return { falta, necessarioDia, atualDia, bateu: falta <= 0 };
 }
 function paceBadge(pf) {
@@ -102,24 +111,116 @@ function paceBadge(pf) {
 // ---------------------------------------------------------------------------
 // Componentes
 // ---------------------------------------------------------------------------
-function headerCards(agg) {
+
+// 1) "O que falta" — o número mais importante, sempre no topo.
+function heroFalta(agg) {
+  const pf = paceFaturamento(agg);
+  const pp = pacePositivacao(agg);
+  const prazo = ultimoDiaUtilLabel();
+  return `
+    <div class="hero-falta">
+      <div class="hero-falta-titulo">O que falta para bater a meta <span class="hero-falta-prazo">— até ${prazo}, último dia útil do mês</span></div>
+      <div class="hero-falta-grid">
+        <div class="hero-falta-item ${pf.bateu ? "ok" : ""}">
+          <div class="hero-falta-label">Falta faturar</div>
+          <div class="hero-falta-valor">${pf.bateu ? "Meta batida ✓" : fmtBRL(pf.falta)}</div>
+          <div class="hero-falta-sub">Meta de faturamento do mês: ${fmtBRL(agg.metaFaturamento)}</div>
+        </div>
+        <div class="hero-falta-item ${pp.bateu ? "ok" : ""}">
+          <div class="hero-falta-label">Falta positivar</div>
+          <div class="hero-falta-valor">${pp.bateu ? "Meta batida ✓" : `${fmtInt(pp.falta)} clientes`}</div>
+          <div class="hero-falta-sub">Meta de positivação do mês: ${fmtInt(agg.metaPositivacao)} clientes</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 2) "Projetado" — onde estamos agora: o que já foi faturado + o que ainda está a faturar,
+// comparado com a meta. Positivação usa uma barra simples (realizado vs meta) porque um
+// mesmo cliente pode ter pedido faturado E pedido a faturar ao mesmo tempo — empilhar as
+// duas contagens somaria esse cliente duas vezes e daria um total errado.
+function barraComMarcador(fillsHtml, pctMeta) {
+  return `
+    <div class="projetado-bar-track">
+      ${fillsHtml}
+      <div class="projetado-meta-marker" style="left:${pctMeta}%"></div>
+    </div>
+  `;
+}
+function projetadoFaturamento(agg) {
+  const atual = agg.faturadoLiquido, pendente = agg.aFaturar, meta = agg.metaFaturamento;
+  // +8% de folga na escala pra marcador de meta nunca cair exatamente na borda direita
+  // (senao o rotulo "Meta", centralizado no marcador, fica cortado/colado no texto do cabecalho)
+  const escala = (Math.max(atual + pendente, meta) || 1) * 1.08;
+  const pctMeta = clampPct(meta / escala * 100);
+  const fills = `
+    <div class="projetado-bar-fill faturado" style="flex:${Math.max(atual, 0.0001)} 0 0"></div>
+    <div class="projetado-bar-fill afaturar" style="flex:${Math.max(pendente, 0.0001)} 0 0"></div>
+  `;
+  return `
+    <div class="projetado-row">
+      <div class="projetado-row-head"><span>Faturamento</span><b>${fmtBRL2(atual + pendente)} <span class="projetado-vs-meta">projetado / meta ${fmtBRL2(meta)}</span></b></div>
+      ${barraComMarcador(fills, pctMeta)}
+      <div class="projetado-legenda">
+        <span><i class="dot faturado"></i>Já faturado: ${fmtBRL2(atual)}</span>
+        <span><i class="dot afaturar"></i>Ainda a faturar: ${fmtBRL2(pendente)}</span>
+      </div>
+    </div>
+  `;
+}
+function projetadoPositivacao(agg) {
+  const atual = agg.positivacaoRealizado, meta = agg.metaPositivacao;
+  const escala = (Math.max(atual, meta) || 1) * 1.08;
+  const pctMeta = clampPct(meta / escala * 100);
+  const fills = `<div class="projetado-bar-fill realizado" style="flex:${Math.max(atual, 0.0001)} 0 0"></div>`;
+  return `
+    <div class="projetado-row">
+      <div class="projetado-row-head"><span>Positivação</span><b>${fmtInt(atual)} clientes <span class="projetado-vs-meta">projetado / meta ${fmtInt(meta)}</span></b></div>
+      ${barraComMarcador(fills, pctMeta)}
+      <div class="projetado-legenda">
+        <span><i class="dot realizado"></i>Clientes positivados: ${fmtInt(atual)} (${fmtInt(agg.positivacaoFaturado)} com nota já faturada, ${fmtInt(agg.positivacaoAFaturar)} com pedido ainda a faturar)</span>
+      </div>
+    </div>
+  `;
+}
+function projetadoSection(agg) {
+  return `
+    <div class="section-title"><span class="bar"></span>Projetado — como estamos hoje</div>
+    <div class="card">
+      ${projetadoFaturamento(agg)}
+      ${projetadoPositivacao(agg)}
+    </div>
+  `;
+}
+
+// 3) "Ritmo diário necessário" — quanto precisa fazer por dia útil (seg a sáb) pra
+// fechar a diferença até o fim do mês.
+function ritmoDiarioSection(agg) {
   const pf = paceFaturamento(agg);
   const pp = pacePositivacao(agg);
   return `
-    <div class="kpi-group-label">Faturamento</div>
+    <div class="section-title"><span class="bar"></span>Ritmo diário necessário <span class="section-sub">(segunda a sábado · restam ${DATA.periodo.diasUteisRestantes} dias úteis)</span></div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Falta faturar (vendas+pendente)</div><div class="kpi-value">${fmtBRL(pf.falta)}</div>
-        <div class="kpi-sub">Meta ${fmtBRL(agg.metaFaturamento)} · já projetado ${fmtBRL(agg.faturadoLiquido + agg.aFaturar)}</div></div>
-      <div class="kpi"><div class="kpi-label">Ritmo necessário / dia útil</div><div class="kpi-value">${fmtBRL(pf.necessarioDia)}</div>
-        <div class="kpi-sub">Ritmo médio até agora: ${fmtBRL(pf.atualDia)}/dia — ${paceBadge(pf)}</div></div>
+      <div class="kpi ${pf.bateu ? "good" : ""}">
+        <div class="kpi-label">Faturamento necessário / dia útil</div>
+        <div class="kpi-value">${fmtBRL(pf.necessarioDia)}</div>
+        <div class="kpi-sub">Média conquistada até agora: ${fmtBRL(pf.atualDia)}/dia útil — ${paceBadge(pf)}</div>
+      </div>
+      <div class="kpi ${pp.bateu ? "good" : ""}">
+        <div class="kpi-label">Clientes a positivar / dia útil</div>
+        <div class="kpi-value">${fmtInt(pp.necessarioDia)}</div>
+        <div class="kpi-sub">Média conquistada até agora: ${fmtInt(pp.atualDia)}/dia útil — ${paceBadge(pp)}</div>
+      </div>
     </div>
-    <div class="kpi-group-label">Positivação (clientes)</div>
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Falta positivar</div><div class="kpi-value">${fmtInt(pp.falta)}</div>
-        <div class="kpi-sub">Meta ${fmtInt(agg.metaPositivacao)} · já positivados ${fmtInt(agg.positivacaoRealizado)} (${fmtInt(agg.positivacaoFaturado)} faturados, ${fmtInt(agg.positivacaoAFaturar)} a faturar)</div></div>
-      <div class="kpi"><div class="kpi-label">Clientes/dia necessário</div><div class="kpi-value">${pp.necessarioDia.toFixed(1)}</div>
-        <div class="kpi-sub">Ritmo médio até agora: ${pp.atualDia.toFixed(1)}/dia — ${paceBadge(pp)}</div></div>
-    </div>
+  `;
+}
+
+function headerCards(agg) {
+  return `
+    ${heroFalta(agg)}
+    ${projetadoSection(agg)}
+    ${ritmoDiarioSection(agg)}
   `;
 }
 
@@ -130,10 +231,11 @@ function fornecedorPaceGrid(agg) {
     const pp = pacePositivacao(b);
     return `<div class="pace-card">
       <div class="pf-name"><span class="pf-dot" style="background:${f.cor}"></span>${esc(f.nome)}</div>
-      <div class="pace-row"><span>Meta</span><b>${fmtBRL(b.metaFaturamento)}</b></div>
-      <div class="pace-row"><span>Projetado</span><b>${fmtBRL(b.faturadoLiquido + b.aFaturar)}</b></div>
-      <div class="pace-need">${fmtBRL(pf.necessarioDia)}<span style="font-size:11px;font-weight:600;color:var(--ink-muted)"> /dia útil</span></div>
-      <div class="pace-row"><span>Clientes/dia p/ positivar</span><b>${pp.necessarioDia.toFixed(1)}</b></div>
+      <div class="pace-row"><span>Meta de faturamento</span><b>${fmtBRL(b.metaFaturamento)}</b></div>
+      <div class="pace-row"><span>Projetado (faturado + a faturar)</span><b>${fmtBRL(b.faturadoLiquido + b.aFaturar)}</b></div>
+      <div class="pace-row falta"><span>Falta p/ bater meta</span><b>${pf.bateu ? "Meta batida ✓" : fmtBRL(pf.falta)}</b></div>
+      <div class="pace-need">${fmtBRL(pf.necessarioDia)}<span class="pace-need-sub"> /dia útil necessário</span></div>
+      <div class="pace-row"><span>Positivação necessária</span><b>${fmtInt(pp.necessarioDia)} clientes/dia útil</b></div>
       ${paceBadge(pf)}
     </div>`;
   }).join("");
@@ -146,7 +248,7 @@ function fornecedorPaceGrid(agg) {
 function renderGeral(view, agg) {
   view.innerHTML = `
     ${headerCards(agg)}
-    <div class="section-title"><span class="bar"></span>Ritmo necessário por Fornecedor</div>
+    <div class="section-title"><span class="bar"></span>Ritmo necessário por Indústria</div>
     <div class="card">${fornecedorPaceGrid(agg)}</div>
   `;
 }
@@ -158,22 +260,22 @@ function renderSupervisor(view, sup) {
   });
   view.innerHTML = `
     ${headerCards(sup.geral)}
-    <div class="section-title"><span class="bar"></span>Ritmo necessário por Fornecedor — equipe ${esc(sup.nome)}</div>
+    <div class="section-title"><span class="bar"></span>Ritmo necessário por Indústria — equipe ${esc(sup.nome)}</div>
     <div class="card">${fornecedorPaceGrid(sup.geral)}</div>
     <div class="section-title"><span class="bar"></span>Vendedores — ritmo individual (${vendedores.length})</div>
     <div class="table-scroll"><table id="exportTable"><thead><tr>
-      <th>Vendedor</th><th class="num">Falta faturar</th><th class="num">R$/dia necessário</th>
-      <th class="num">R$/dia atual</th><th class="num">Falta positivar</th><th class="num">Clientes/dia necessário</th><th>Situação</th>
+      <th>Vendedor</th><th class="num">Falta p/ bater meta (R$)</th><th class="num">R$ necessário/dia útil</th>
+      <th class="num">R$ média atual/dia útil</th><th class="num">Falta positivar (clientes)</th><th class="num">Clientes necessário/dia útil</th><th>Situação</th>
     </tr></thead><tbody>
       ${vendedores.map(v => {
         const pf = paceFaturamento(v.geral), pp = pacePositivacao(v.geral);
         return `<tr style="cursor:pointer" onclick="location.hash='#/sup/${sup.codigo}/vendedor/${v.codigo}'">
           <td><strong>${esc(v.nome)}</strong></td>
-          <td class="num">${fmtBRL2(pf.falta)}</td>
+          <td class="num">${pf.bateu ? "—" : fmtBRL2(pf.falta)}</td>
           <td class="num">${fmtBRL2(pf.necessarioDia)}</td>
           <td class="num">${fmtBRL2(pf.atualDia)}</td>
-          <td class="num">${fmtInt(pp.falta)}</td>
-          <td class="num">${pp.necessarioDia.toFixed(1)}</td>
+          <td class="num">${pp.bateu ? "—" : fmtInt(pp.falta)}</td>
+          <td class="num">${fmtInt(pp.necessarioDia)}</td>
           <td>${paceBadge(pf)}</td>
         </tr>`;
       }).join("")}
@@ -185,12 +287,12 @@ function renderVendedor(view, sup, vend) {
   view.innerHTML = `
     <div class="breadcrumb"><a href="#/sup/${sup.codigo}">Equipe ${esc(sup.nome)}</a> / ${esc(vend.nome)}</div>
     ${headerCards(vend.geral)}
-    <div class="section-title"><span class="bar"></span>Ritmo necessário por Fornecedor</div>
+    <div class="section-title"><span class="bar"></span>Ritmo necessário por Indústria</div>
     <div class="card">${fornecedorPaceGrid(vend.geral)}</div>
     <div class="card" style="margin-top:14px">
       <div class="table-scroll"><table id="exportTable"><thead><tr>
-        <th>Fornecedor</th><th class="num">Meta</th><th class="num">Projetado</th><th class="num">Falta</th>
-        <th class="num">R$/dia necessário</th><th class="num">Clientes/dia necessário</th>
+        <th>Indústria</th><th class="num">Meta</th><th class="num">Projetado</th><th class="num">Falta p/ bater meta</th>
+        <th class="num">R$ necessário/dia útil</th><th class="num">Clientes necessário/dia útil</th>
       </tr></thead><tbody>
         ${DATA.fornecedores.map(f => {
           const b = vend.geral.porFornecedor[f.id] || { metaFaturamento:0, faturadoLiquido:0, aFaturar:0, metaPositivacao:0, positivacaoRealizado:0 };
@@ -198,9 +300,9 @@ function renderVendedor(view, sup, vend) {
           return `<tr><td><span class="forn-bar-dot" style="background:${f.cor};display:inline-block;margin-right:6px"></span>${esc(f.nome)}</td>
             <td class="num">${fmtBRL2(b.metaFaturamento)}</td>
             <td class="num">${fmtBRL2(b.faturadoLiquido + b.aFaturar)}</td>
-            <td class="num">${fmtBRL2(pf.falta)}</td>
+            <td class="num">${pf.bateu ? "—" : fmtBRL2(pf.falta)}</td>
             <td class="num">${fmtBRL2(pf.necessarioDia)}</td>
-            <td class="num">${pp.necessarioDia.toFixed(1)}</td>
+            <td class="num">${fmtInt(pp.necessarioDia)}</td>
           </tr>`;
         }).join("")}
       </tbody></table></div>
