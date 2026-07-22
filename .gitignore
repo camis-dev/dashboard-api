@@ -2,3 +2,6 @@
 Bases/
 *.xls
 *.xlsx
+
+# Arquivo gerado automaticamente pelo Windows/OneDrive, nao faz parte do projeto
+desktop.ini

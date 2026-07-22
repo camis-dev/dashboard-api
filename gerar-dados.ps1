@@ -9,6 +9,19 @@ $sitePath = Join-Path $root "Site"
 $ritmoPath = Join-Path $root "Ritmo"
 $consultaPath = Join-Path $root "Consulta"
 
+# Usuario reorganizou a pasta Bases em 2026-07-22 (depois de compartilhar upload com
+# terceiro): arquivos que mudam pouco (Metas, catalogo ESTOQUE API) foram movidos para
+# uma subpasta "Armazenamento", deixando a raiz de Bases so com o que muda com frequencia
+# (8022 - geral.xls, Cortes Geral.xls). Resolve-BaseFile procura primeiro na raiz, depois
+# em Armazenamento, pra pipeline funcionar nas duas organizacoes sem precisar mover nada.
+function Resolve-BaseFile([string]$nomeArquivo) {
+    $naRaiz = Join-Path $basesPath $nomeArquivo
+    if (Test-Path $naRaiz) { return $naRaiz }
+    $noArmazenamento = Join-Path (Join-Path $basesPath "Armazenamento") $nomeArquivo
+    if (Test-Path $noArmazenamento) { return $noArmazenamento }
+    throw "Arquivo nao encontrado em Bases/ nem em Bases/Armazenamento/: $nomeArquivo"
+}
+
 function Remove-Diacritics([string]$s) {
     if (-not $s) { return $s }
     $normalized = $s.Normalize([Text.NormalizationForm]::FormD)
@@ -56,7 +69,7 @@ $fornecedores = [ordered]@{
 Write-Host "Lendo catalogo mestre ESTOQUE API (mapa produto -> fornecedor, autoritativo via Cod.Fornec.)..."
 $fornCodeToId = @{ "6101"="INGLEZA"; "20047"="PANASONIC"; "24185"="ARCOR"; "25987"="BAGLEY"; "35116"="CONDOR"; "28037"="AB MAURI"; "38293"="WOW" }
 $codprodToForn = @{}
-$wbCat = $excel.Workbooks.Open((Join-Path $basesPath "ESTOQUE API (1).xls"), $null, $true)
+$wbCat = $excel.Workbooks.Open((Resolve-BaseFile "ESTOQUE API (1).xls"), $null, $true)
 $wsCat = $wbCat.Worksheets.Item(1)
 $rowsCat = $wsCat.UsedRange.Rows.Count
 $arrCat = $wsCat.UsedRange.Value2
@@ -139,7 +152,7 @@ function Read-MetaBlocos($wb, $sheetName) {
     return $canon
 }
 
-$wbMeta = $excel.Workbooks.Open((Join-Path $basesPath "Metas Julho.xlsx"), $null, $true)
+$wbMeta = $excel.Workbooks.Open((Resolve-BaseFile "Metas Julho.xlsx"), $null, $true)
 $metaFat = Read-MetaSheet $wbMeta "FATURAMENTO"
 $metaPos = Read-MetaSheet $wbMeta "POSITIVAÇÃO"
 $vendedorSupervisorCanonico = Read-MetaBlocos $wbMeta "FATURAMENTO"
@@ -175,7 +188,7 @@ $residuaisInterno = @("63","64","68","87")
 # CAIXAS VENDIDAS/UNIDADES VENDIDAS vem trocadas de ordem entre si.
 # ---------------------------------------------------------------------------
 Write-Host "Lendo base 8022 - Geral (pode demorar)..."
-$wb8 = $excel.Workbooks.Open((Join-Path $basesPath "8022 - geral.xls"), $null, $true)
+$wb8 = $excel.Workbooks.Open((Resolve-BaseFile "8022 - geral.xls"), $null, $true)
 $ws8 = $wb8.Worksheets.Item(1)
 $rows8 = $ws8.UsedRange.Rows.Count
 $arr8 = $ws8.UsedRange.Value2
@@ -333,7 +346,11 @@ foreach ($l in $linhas) {
 # sem duplicar Julho.
 # ---------------------------------------------------------------------------
 $linhasHistorico = New-Object System.Collections.Generic.List[object]
-$arquivosHistorico = @(Get-ChildItem -Path $basesPath -Filter "8022 - *.xls" | Where-Object { $_.Name -ne "8022 - geral.xls" })
+$armazenamentoPath = Join-Path $basesPath "Armazenamento"
+$arquivosHistorico = @(Get-ChildItem -Path $basesPath -Filter "8022 - *.xls" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "8022 - geral.xls" })
+if (Test-Path $armazenamentoPath) {
+    $arquivosHistorico += @(Get-ChildItem -Path $armazenamentoPath -Filter "8022 - *.xls" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "8022 - geral.xls" })
+}
 foreach ($arqH in $arquivosHistorico) {
     Write-Host "Lendo base historica $($arqH.Name) (so para Consulta de Pedidos)..."
     $excelH = New-Object -ComObject Excel.Application
@@ -660,7 +677,7 @@ Write-Host "Lendo relatorio real de cortes (Cortes Geral.xls)..."
 $excel2 = New-Object -ComObject Excel.Application
 $excel2.Visible = $false
 $excel2.DisplayAlerts = $false
-$wbCorteFile = $excel2.Workbooks.Open((Join-Path $basesPath "Cortes Geral.xls"), $null, $true)
+$wbCorteFile = $excel2.Workbooks.Open((Resolve-BaseFile "Cortes Geral.xls"), $null, $true)
 $wsCorte = $wbCorteFile.Worksheets.Item(1)
 $rowsCorte = $wsCorte.UsedRange.Rows.Count
 $arrCorte = $wsCorte.UsedRange.Value2
