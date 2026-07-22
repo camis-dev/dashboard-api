@@ -53,6 +53,7 @@ function grupoTable(grupos, opts = {}) {
   if (!grupos.length) return `<p class="empty-state">Nenhum registro no mês.</p>`;
   const showSup = !!opts.showSupervisor;
   const showStatus = !!opts.showStatus;
+  const showCorte = !!opts.showCorte;
   const rows = grupos.map(g => {
     const searchText = [g.numeroPedidoWinthor, g.numeroPedidoClube, g.codigoRCA, g.vendedor, g.cnpj, g.codCliente, g.razaoSocial]
       .join(" ").toLowerCase();
@@ -74,11 +75,15 @@ function grupoTable(grupos, opts = {}) {
       <tr class="grupo-detail" style="display:none">
         <td colspan="${detailCols + 2}">
           <table class="produtos-subtable"><thead><tr>
-            <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th>${showStatus ? "<th>Status</th>" : ""}<th class="num">Valor</th>
+            <th>Cód. Produto</th><th>Produto</th><th>Fornecedor</th>
+            ${showStatus ? "<th>Status</th>" : ""}
+            ${showCorte ? `<th>Embalagem</th><th class="num">Qt. Corte</th><th class="num">Preço Unit.</th>` : ""}
+            <th class="num">Valor</th>
           </tr></thead><tbody>
             ${g.produtos.map(p => `<tr>
               <td>${esc(p.codProduto)}</td><td>${esc(p.produto)}</td><td>${esc(p.fornecedor||"—")}</td>
               ${showStatus ? `<td>${statusPillHtml(p.status)}</td>` : ""}
+              ${showCorte ? `<td>${esc(p.embalagem)}</td><td class="num">${fmtInt(p.qtCorte)}</td><td class="num">${fmtBRL2(p.precoUnit)}</td>` : ""}
               <td class="num">${fmtBRL2(p.valor)}</td>
             </tr>`).join("")}
           </tbody></table>
@@ -399,7 +404,7 @@ function renderVendedorDevCortes(container, codigoSup, codigoVend) {
     container.querySelectorAll("#devCorteTabs .tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     const card = document.getElementById("devCorteCard");
     const grupos = tab === "cortes" ? corteGrupos : devGrupos;
-    const opts = tab === "cortes" ? { showStatus: true, exportable: false } : { exportable: false };
+    const opts = tab === "cortes" ? { showCorte: true, exportable: false } : { exportable: false };
     card.innerHTML = grupos.length
       ? `<p class="hint">Clique numa linha para ver os produtos daquele pedido.</p>${grupoTable(grupos, opts)}`
       : `<p class="empty-state">Nenhum registro no mês.</p>`;
@@ -465,21 +470,21 @@ function renderDevolucoesGeralPage(view, titulo, bloco) {
 function renderCortesGeralPage(view, titulo, bloco) {
   view.innerHTML = `
     <div class="kpi-grid">${kpiCard(titulo, fmtBRL2(bloco ? bloco.valorTotal : 0), `${bloco ? bloco.grupos.length : 0} pedido(s) no mês`)}</div>
-    <div class="section-title"><span class="bar"></span>Produtos de alocação controlada mais vendidos</div>
+    <div class="section-title"><span class="bar"></span>Produtos mais cortados no mês</div>
     <div class="card">${cortesProdutosTable()}</div>
     <div id="cortesGrupoSlot"></div>
   `;
-  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: true, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA, supervisor)", skipKpi: true });
+  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: true, showCorte: true, fornecedorLabel: "Valor vendido", detailTitle: "Detalhamento (cliente, CNPJ, produto, RCA, supervisor)", skipKpi: true });
 }
 function renderCortesTab(body, codigo, nome) {
   const bloco = DATA.cortes.porSupervisor.find(s => s.codigo === codigo);
   body.innerHTML = `
     <div class="kpi-grid">${kpiCard("Vendido em itens de corte — " + esc(nome), fmtBRL2(bloco ? bloco.valorTotal : 0), `${bloco ? bloco.grupos.length : 0} pedido(s) no mês`)}</div>
-    <div class="section-title"><span class="bar"></span>Produtos de alocação controlada mais vendidos</div>
+    <div class="section-title"><span class="bar"></span>Produtos mais cortados no mês</div>
     <div class="card">${cortesProdutosTable()}</div>
     <div id="cortesGrupoSlot"></div>
   `;
-  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: false, showVendedor: true, showStatus: true, fornecedorLabel: "Valor vendido", detailTitle: `Detalhamento (produto, pedido, valor) — ${nome}`, skipKpi: true });
+  renderGrupoESearch(document.getElementById("cortesGrupoSlot"), null, bloco, { showSupervisor: false, showVendedor: true, showCorte: true, fornecedorLabel: "Valor vendido", detailTitle: `Detalhamento (produto, pedido, valor) — ${nome}`, skipKpi: true });
 }
 
 // Renderiza KPI (opcional) + tabela "Por Fornecedor" + busca + tabela agrupada com accordion,
@@ -511,13 +516,13 @@ function renderGrupoESearch(container, kpiLabel, bloco, opts) {
 function cortesProdutosTable() {
   const produtos = DATA.cortes.produtos.slice(0, 40);
   if (!produtos.length) return `<p class="empty-state">Sem dados de corte.</p>`;
-  const rows = produtos.map(p => `<tr><td>${esc(p.produto)}</td><td>${esc(p.categoria)}</td><td>${esc(p.fornecedor||"—")}</td>
-      <td class="num">${fmtBRL2(p.valor)}</td>
-      <td class="num">${fmtInt(p.vendidoUnid)}</td></tr>`).join("");
+  const rows = produtos.map(p => `<tr><td>${esc(p.produto)}</td><td>${esc(p.fornecedor||"—")}</td>
+      <td class="num">${fmtInt(p.qtCorte)}</td>
+      <td class="num">${fmtBRL2(p.valor)}</td></tr>`).join("");
   return `<div class="table-scroll"><table><thead><tr>
-    <th>Produto</th><th>Categoria</th><th>Fornecedor</th><th class="num">Valor vendido no mês</th><th class="num">Unidades vendidas</th>
+    <th>Produto</th><th>Fornecedor</th><th class="num">Qt. Cortada no mês</th><th class="num">Valor cortado no mês</th>
   </tr></thead><tbody>${rows}</tbody></table></div>
-  <p class="hint" style="margin-top:8px">Top 40 produtos de alocação controlada por valor vendido, dentre ${DATA.cortes.produtos.length} itens monitorados no mês.</p>`;
+  <p class="hint" style="margin-top:8px">Top 40 produtos com mais corte por valor, dentre ${DATA.cortes.produtos.length} itens cortados no mês.</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -540,3 +545,4 @@ function exportCurrentViewToExcel() {
   a.click();
   URL.revokeObjectURL(url);
 }
+

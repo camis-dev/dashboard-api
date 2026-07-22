@@ -76,25 +76,9 @@ Write-Host "  Mapeados via ESTOQUE API: $($codprodToForn.Count) codigos de produ
 # a nenhum dos 7 (nao aparecem no catalogo mestre sob nenhum dos 7 codigos).
 
 # ---------------------------------------------------------------------------
-# 2. Catalogo "Cortes - Geral" (produtos de alocacao controlada / corte)
-# ---------------------------------------------------------------------------
-Write-Host "Lendo catalogo de cortes..."
-$wbCorte = $excel.Workbooks.Open((Join-Path $basesPath "Cortes - Geral.xls"), $null, $true)
-$wsCorte = $wbCorte.Worksheets.Item(1)
-$rowsCorte = $wsCorte.UsedRange.Rows.Count
-$arrCorte = $wsCorte.UsedRange.Value2
-$corteInfo = @{}  # codprod -> @{ fornecedor, categoria, alocado }
-for ($r = 1; $r -le $rowsCorte; $r++) {
-    $cp = "$($arrCorte[$r,1])"
-    if (-not $cp -or $cp -eq "") { continue }
-    $corteInfo[$cp] = @{
-        categoria = "$($arrCorte[$r,12])"
-        alocado   = [double]$arrCorte[$r,13]
-    }
-}
-$wbCorte.Close($false)
-Write-Host "  Produtos de corte: $($corteInfo.Count)"
-
+# 2. (era o catalogo estatico "Cortes - Geral.xls" - substituido em 2026-07-22 pelo
+# relatorio real de corte "Cortes Geral.xls", lido mais abaixo na secao 8 depois da
+# 8022, pois precisa do lookup pedido->cliente construido a partir dela.)
 # ---------------------------------------------------------------------------
 # 3. Metas Julho.xlsx (FATURAMENTO e POSITIVACAO por Setor/Vendedor)
 # ---------------------------------------------------------------------------
@@ -317,6 +301,16 @@ $wb8.Close($false)
 $excel.Quit()
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
 Write-Host "  $($linhas.Count) linhas no periodo vigente"
+
+# Lookup Pedido Winthor -> dados do cliente, usado para enriquecer o relatorio de Cortes
+# (que nao tem CNPJ/cod.cliente/razao social - so pedido, produto e RCA). Um pedido Winthor
+# pertence a um unico cliente, entao o primeiro encontrado ja resolve.
+$pedidoWinthorToCliente = @{}
+foreach ($l in $linhas) {
+    if (-not $pedidoWinthorToCliente.ContainsKey($l.NumPedWinthor)) {
+        $pedidoWinthorToCliente[$l.NumPedWinthor] = @{ CodCliente = $l.CodCliente; CNPJ = $l.CNPJ; NomeCliente = $l.NomeCliente }
+    }
+}
 
 # ---------------------------------------------------------------------------
 # 6. Funcoes de agregacao
@@ -568,39 +562,108 @@ foreach ($l in $devLinhas) {
 }
 
 # ---------------------------------------------------------------------------
-# 8. Cortes (produtos de alocacao controlada)
-# ---------------------------------------------------------------------------
-Write-Host "Montando cortes..."
-$corteLinhas = $linhas | Where-Object { $_.TipoVenda -eq "VENDA" -and $corteInfo.ContainsKey($_.CodProd) }
+# 8. Cortes - relatorio real "1454 - Consultar Corte de Mercadorias" do Winthor
+# (substituiu o catalogo estatico em 2026-07-22). E um relatorio IMPRESSO, nao uma
+# tabela: repete um cabecalho de filtros a cada "pagina" e reimprime o contexto do
+# supervisor/RCA correntes, entao o mesmo supervisor pode aparecer em varios trechos
+# nao contiguos do arquivo. O parser abaixo rastreia supervisor/RCA "correntes" linha
+# a linha (atualizando sempre que encontra uma linha de cabecalho) e acumula qualquer
+# linha de dado sob o contexto vigente no momento - testado e validado: a soma de
+# TODAS as linhas de dado bate exatamente com o ultimo "Total do Supervisor:" impresso
+# no arquivo (que na verdade e cumulativo do relatorio inteiro, nao por supervisor,
+# apesar do nome - servico so como checksum de que nenhuma linha foi perdida).
+# Colunas (fixas, confirmadas por inspecao - nao ha cabecalho por coluna no topo do
+# arquivo, so nos blocos repetidos "Data|Pedido|Cod.|Descricao|...|Embalagem|...|Un.|
+# Qt. Corte|Preco Unit.|_|Vlr. Total|Comprador|Depto."):
+#   1=Data  2=Pedido(Winthor)  3=CodProd  4=Descricao  9=Embalagem  11=Unidade
+#   12=Qt.Corte  13=Preco Unit.  15=Vlr.Total  16=Comprador  17=Depto.
+# Nao tem CNPJ/cod.cliente/razao social - enriquecido via $pedidoWinthorToCliente.
+Write-Host "Lendo relatorio real de cortes (Cortes Geral.xls)..."
+$excel2 = New-Object -ComObject Excel.Application
+$excel2.Visible = $false
+$excel2.DisplayAlerts = $false
+$wbCorteFile = $excel2.Workbooks.Open((Join-Path $basesPath "Cortes Geral.xls"), $null, $true)
+$wsCorte = $wbCorteFile.Worksheets.Item(1)
+$rowsCorte = $wsCorte.UsedRange.Rows.Count
+$arrCorte = $wsCorte.UsedRange.Value2
+
 $cortePorSupGrupos = @{}
 $corteGeralGrupos = @{}
 $corteConsumoProduto = @{}
-foreach ($l in $corteLinhas) {
-    $cs = $l.CodSupervisor
-    $nomeSupC = if ($supervisoresInfo.Contains($cs)) { $supervisoresInfo[$cs].nome } else { "Outros/Interno" }
-    $valorL = [Math]::Round($l.Valor,2)
-    if (-not $cortePorSupGrupos.ContainsKey($cs)) { $cortePorSupGrupos[$cs] = @{} }
+$curCorteSupCod = "OUTROS"; $curCorteSupNome = "Outros/Interno"
+$curCorteRcaCod = $null; $curCorteRcaNome = $null
+$corteLinhasCount = 0
 
-    $gSup = Get-Or-NovoGrupo $cortePorSupGrupos[$cs] $l $nomeSupC
-    $gGeral = Get-Or-NovoGrupo $corteGeralGrupos $l $nomeSupC
-    foreach ($g in @($gSup, $gGeral)) {
-        $g.valorTotal = [Math]::Round($g.valorTotal + $valorL, 2)
-        $g.produtos.Add([ordered]@{ codProduto = $l.CodProd; produto = $l.DescProduto; fornecedor = $l.Fornecedor; status = $l.StatusFat; valor = $valorL })
+for ($r = 1; $r -le $rowsCorte; $r++) {
+    $c1 = $arrCorte[$r,1]; $c2 = $arrCorte[$r,2]; $c3 = $arrCorte[$r,3]; $c4 = $arrCorte[$r,4]; $c5 = $arrCorte[$r,5]
+
+    if ("$c2" -eq "SUPERVISOR :" -or "$c1" -eq "SUPERVISOR :") {
+        $codRaw = "$([int]$c3)"
+        $curCorteSupCod = if ($foldSupervisor.ContainsKey($codRaw)) { $foldSupervisor[$codRaw] } else { $codRaw }
+        if (-not $supervisoresInfo.Contains($curCorteSupCod)) { $curCorteSupCod = "OUTROS" }
+        $curCorteSupNome = if ($supervisoresInfo.Contains($curCorteSupCod)) { $supervisoresInfo[$curCorteSupCod].nome } else { "Outros/Interno" }
+        continue
     }
-    if (-not $corteConsumoProduto.ContainsKey($l.CodProd)) {
-        $ciTmp = $corteInfo[$l.CodProd]
-        $corteConsumoProduto[$l.CodProd] = [ordered]@{
-            produto = $l.DescProduto
-            categoria = $ciTmp.categoria
-            fornecedor = $l.Fornecedor
-            alocado = $ciTmp.alocado
-            vendidoUnid = 0.0
-            valor = 0.0
+    if ("$c2" -eq "RCA :") {
+        $curCorteRcaCod = "$([int]$c3)"
+        $curCorteRcaNome = "$c5"
+        continue
+    }
+    # linha de dado: Data (double/serial), Pedido (double) e CodProd (double) juntos
+    if ($c1 -is [double] -and $c2 -is [double] -and $c3 -is [double]) {
+        $corteLinhasCount++
+        $numPedWinthorCorte = "$([int64]$c2)"
+        $codProdCorte = "$([int]$c3)"
+        $qtCorte = Parse-ValorBR $arrCorte[$r,12]
+        $valorCorte = Parse-ValorBR $arrCorte[$r,15]
+        $cliente = $pedidoWinthorToCliente[$numPedWinthorCorte]
+
+        $linhaCorte = [pscustomobject]@{
+            Data = [datetime]::FromOADate($c1)
+            CodCliente = if ($cliente) { $cliente.CodCliente } else { "" }
+            NomeCliente = if ($cliente) { $cliente.NomeCliente } else { "Cliente não identificado" }
+            CNPJ = if ($cliente) { $cliente.CNPJ } else { "" }
+            SegTeam = $null
+            NumPedRCA = ""
+            NumPedWinthor = $numPedWinthorCorte
+            CodVendedor = $curCorteRcaCod
+            NomeVendedor = $curCorteRcaNome
+            CodSupervisor = $curCorteSupCod
         }
+        $forn = $null
+        if ($codprodToForn.ContainsKey($codProdCorte)) { $forn = $codprodToForn[$codProdCorte] }
+
+        if (-not $cortePorSupGrupos.ContainsKey($curCorteSupCod)) { $cortePorSupGrupos[$curCorteSupCod] = @{} }
+        $gSup = Get-Or-NovoGrupo $cortePorSupGrupos[$curCorteSupCod] $linhaCorte $curCorteSupNome
+        $gGeral = Get-Or-NovoGrupo $corteGeralGrupos $linhaCorte $curCorteSupNome
+        foreach ($g in @($gSup, $gGeral)) {
+            $g.valorTotal = [Math]::Round($g.valorTotal + $valorCorte, 2)
+            $g.produtos.Add([ordered]@{
+                codProduto = $codProdCorte
+                produto = "$($arrCorte[$r,4])".Trim()
+                fornecedor = $forn
+                embalagem = "$($arrCorte[$r,9])".Trim()
+                qtCorte = $qtCorte
+                precoUnit = Parse-ValorBR $arrCorte[$r,13]
+                valor = [Math]::Round($valorCorte,2)
+            })
+        }
+        if (-not $corteConsumoProduto.ContainsKey($codProdCorte)) {
+            $corteConsumoProduto[$codProdCorte] = [ordered]@{
+                produto = "$($arrCorte[$r,4])".Trim()
+                fornecedor = $forn
+                qtCorte = 0.0
+                valor = 0.0
+            }
+        }
+        $corteConsumoProduto[$codProdCorte].qtCorte += $qtCorte
+        $corteConsumoProduto[$codProdCorte].valor = [Math]::Round($corteConsumoProduto[$codProdCorte].valor + $valorCorte, 2)
     }
-    $corteConsumoProduto[$l.CodProd].valor = [Math]::Round($corteConsumoProduto[$l.CodProd].valor + $l.Valor,2)
-    $corteConsumoProduto[$l.CodProd].vendidoUnid += $l.UnidVendidas
 }
+$wbCorteFile.Close($false)
+$excel2.Quit()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel2) | Out-Null
+Write-Host "  $corteLinhasCount linhas de corte lidas"
 
 # ---------------------------------------------------------------------------
 # 8b. Consulta de Pedidos (status operacional - novo na 8022, para vendedores
@@ -655,7 +718,7 @@ foreach ($cs in $supervisoresInfo.Keys) {
     $vendOut = New-Object System.Collections.Generic.List[object]
     foreach ($cv in ($sAgg.vendedores.Keys | Sort-Object { $sAgg.vendedores[$_].geral.faturado + $sAgg.vendedores[$_].geral.aFaturar } -Descending)) {
         $vAgg = $sAgg.vendedores[$cv]
-        $pedidosArr = @($vAgg.pedidos.Values | Sort-Object data -Descending)
+        $pedidosArr = @($vAgg.pedidos.Values | Sort-Object { $_.data } -Descending)
         $vendOut.Add([ordered]@{
             codigo = $cv
             nome = $vAgg.nome
@@ -683,7 +746,7 @@ function Sum-GrupoValor($grupos) {
     return $soma
 }
 function Grupos-ParaSaida($gruposDict) {
-    return @($gruposDict.Values | ForEach-Object { $_.produtos = @($_.produtos | Sort-Object produto); $_ } | Sort-Object data -Descending)
+    return @($gruposDict.Values | ForEach-Object { $_.produtos = @($_.produtos | Sort-Object { $_.produto }); $_ } | Sort-Object { $_.data } -Descending)
 }
 
 $devTotalAbs = [Math]::Abs([Math]::Round(($devLinhas | Measure-Object -Property Valor -Sum).Sum,2))
@@ -705,10 +768,10 @@ foreach ($cs in $devPorSupGrupos.Keys) {
     })
 }
 
-$corteTotal = [Math]::Round(($corteLinhas | Measure-Object -Property Valor -Sum).Sum,2)
+$corteTotal = [Math]::Round((Sum-GrupoValor $corteGeralGrupos.Values),2)
 $cortesOut = [ordered]@{
     valorTotal = $corteTotal
-    produtos = @($corteConsumoProduto.Values | Sort-Object valor -Descending)
+    produtos = @($corteConsumoProduto.Values | Sort-Object { $_.valor } -Descending)
     geral = [ordered]@{
         valorTotal = $corteTotal
         grupos = Grupos-ParaSaida $corteGeralGrupos
