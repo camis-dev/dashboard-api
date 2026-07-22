@@ -6,11 +6,38 @@ const fmtBRL2 = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", cur
 const fmtDate = (iso) => { const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-const STATUS_ORDEM = ["BLOQUEADO", "PENDENTE", "MONTADO", "LIBERADO", "FATURADO", "DEVOLVIDO", "MISTO"];
+// Ordem oficial do processo (definida pelo usuário): Liberado -> Montado -> Faturado ->
+// Pendente (Em Aprovação) -> Devolvido -> Bloqueado. Usada tanto na régua/legenda quanto
+// na ordem dos chips de resumo, para o vendedor sempre ver os status na mesma sequência.
+const STATUS_ORDEM = ["LIBERADO", "MONTADO", "FATURADO", "PENDENTE", "DEVOLVIDO", "BLOQUEADO", "MISTO"];
 const STATUS_LABEL = {
-  BLOQUEADO: "Bloqueado", PENDENTE: "Pendente", MONTADO: "Montado",
-  LIBERADO: "Liberado", FATURADO: "Faturado", DEVOLVIDO: "Devolvido", MISTO: "Misto"
+  LIBERADO: "Liberado", MONTADO: "Montado", FATURADO: "Faturado",
+  PENDENTE: "Em Aprovação", DEVOLVIDO: "Devolvido", BLOQUEADO: "Bloqueado", MISTO: "Misto"
 };
+const PROCESSO_PASSOS = [
+  { status: "LIBERADO", label: "Liberado" },
+  { status: "MONTADO", label: "Montado" },
+  { status: "FATURADO", label: "Faturado" },
+  { status: "PENDENTE", label: "Em Aprovação" },
+  { status: "DEVOLVIDO", label: "Devolvido" },
+  { status: "BLOQUEADO", label: "Bloqueado" },
+];
+
+function legendaProcessoHtml() {
+  const passos = PROCESSO_PASSOS.map((p, i) => `
+    <div class="legenda-passo">
+      <div class="legenda-numero status-${p.status}">${i + 1}</div>
+      <div class="legenda-label">${esc(p.label)}</div>
+    </div>
+    ${i < PROCESSO_PASSOS.length - 1 ? `<div class="legenda-seta">→</div>` : ""}
+  `).join("");
+  return `
+    <div class="legenda-processo">
+      <div class="legenda-titulo">Ordem do processo — o que vem depois</div>
+      <div class="legenda-trilha">${passos}</div>
+    </div>
+  `;
+}
 
 (function init() {
   if (!window.DASHBOARD_DATA) {
@@ -19,6 +46,7 @@ const STATUS_LABEL = {
   }
   DATA = window.DASHBOARD_DATA;
   document.getElementById("periodoLabel").textContent = DATA.periodo.label;
+  document.getElementById("legendaProcesso").innerHTML = legendaProcessoHtml();
   const input = document.getElementById("buscaPedido");
   input.addEventListener("input", () => render(input.value.trim().toLowerCase()));
   render("");

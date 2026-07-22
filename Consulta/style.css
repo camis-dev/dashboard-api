@@ -90,6 +90,25 @@
 .pedido-card-body tbody tr:last-child td { border-bottom: none; }
 .pedido-card-body td.num, .pedido-card-body th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* ---------- Régua/legenda da ordem do processo ---------- */
+.legenda-processo {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 18px; margin-bottom: 22px; box-shadow: var(--shadow);
+}
+.legenda-titulo { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted); margin-bottom: 12px; }
+.legenda-trilha { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 4px; }
+.legenda-passo { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 68px; }
+.legenda-numero {
+  width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-weight: 800; font-size: 13px; border: 1.5px solid currentColor;
+}
+.legenda-label { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-align: center; white-space: nowrap; }
+.legenda-seta { color: var(--ink-muted); font-size: 14px; padding-bottom: 20px; flex-shrink: 0; }
+@media (max-width: 700px) {
+  .legenda-trilha { justify-content: center; }
+  .legenda-seta { display: none; }
+}
+
 .empty-hint { text-align: center; color: var(--ink-muted); padding: 60px 20px; font-size: 14px; }
 
 @media (max-width: 700px) {
