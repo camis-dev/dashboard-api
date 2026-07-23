@@ -27,7 +27,7 @@ function statusPillHtml(status) {
 // ---------------------------------------------------------------------------
 function searchBoxHtml(id) {
   return `<div class="search-box"><input type="text" id="${id}" class="search-input"
-    placeholder="Buscar por pedido Winthor, pedido Clube, vendedor, cód. RCA, CNPJ ou cód. cliente..."></div>`;
+    placeholder="Buscar por pedido Winthor, pedido Clube, nota fiscal, vendedor, cód. RCA, CNPJ ou cód. cliente..."></div>`;
 }
 function wireSearchBox(inputId, containerEl) {
   const input = document.getElementById(inputId);
@@ -55,15 +55,16 @@ function grupoTable(grupos, opts = {}) {
   const showStatus = !!opts.showStatus;
   const showCorte = !!opts.showCorte;
   const rows = grupos.map(g => {
-    const searchText = [g.numeroPedidoWinthor, g.numeroPedidoClube, g.codigoRCA, g.vendedor, g.cnpj, g.codCliente, g.razaoSocial]
+    const searchText = [g.numeroPedidoWinthor, g.numeroPedidoClube, g.numeroNotaFiscal, g.codigoRCA, g.vendedor, g.cnpj, g.codCliente, g.razaoSocial]
       .join(" ").toLowerCase();
-    const detailCols = 8 + (showSup ? 1 : 0);
+    const detailCols = 9 + (showSup ? 1 : 0);
     return `
       <tr class="grupo-row" data-search="${esc(searchText)}">
         <td class="grupo-toggle">▸</td>
         <td>${fmtDate(g.data)}</td>
         <td>${esc(g.numeroPedidoWinthor)}</td>
         <td>${esc(g.numeroPedidoClube)}</td>
+        <td>${esc(g.numeroNotaFiscal)}</td>
         <td>${esc(g.codigoRCA)}</td>
         <td>${esc(g.codCliente)}</td>
         <td>${esc(g.cnpj)}</td>
@@ -92,7 +93,7 @@ function grupoTable(grupos, opts = {}) {
   }).join("");
   const idAttr = opts.exportable === false ? "" : ` id="exportTable"`;
   return `<div class="table-scroll"><table${idAttr}><thead><tr>
-    <th class="grupo-toggle"></th><th>Data</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th>
+    <th class="grupo-toggle"></th><th>Data</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Nota Fiscal</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th>
     <th>Razão Social</th>${showSup ? "<th>Supervisor</th>" : ""}<th>Vendedor</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -212,7 +213,7 @@ function kpiGrid(agg) {
       ${kpiCard("Meta de Faturamento", fmtBRL(agg.metaFaturamento), "Meta do mês (7 fornecedores)")}
       ${kpiCard("Faturado (líquido)", fmtBRL(agg.faturadoLiquido), `${progFat}% da meta${devSub}`, { progress: progFat })}
       ${kpiCard("A Faturar", fmtBRL(agg.aFaturar), "Pedidos ainda não faturados")}
-      ${kpiCard("Projetado (Fat. + A Faturar)", fmtBRL(agg.faturadoLiquido + agg.aFaturar), `${progGeral}% da meta se tudo for faturado`, { progress: progGeral })}
+      ${kpiCard("Fat + A Fat", fmtBRL(agg.faturadoLiquido + agg.aFaturar), `${progGeral}% da meta se tudo for faturado`, { progress: progGeral })}
     </div>
     <div class="kpi-group-label">Positivação (clientes)</div>
     <div class="kpi-grid">
@@ -268,7 +269,7 @@ function fornecedorTable(agg) {
   }).join("");
   return `<div class="table-scroll"><table class="forn-summary-table"><thead><tr>
     <th>Fornecedor</th><th class="num">Meta</th><th class="num">Faturado líq.</th><th class="num">A Faturar</th>
-    <th class="num">Projetado</th><th class="num">% Meta</th><th class="num">Positivação</th><th class="num">Devolução</th>
+    <th class="num">Fat + A Fat</th><th class="num">% Meta</th><th class="num">Positivação</th><th class="num">Devolução</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -416,11 +417,12 @@ function renderVendedorDevCortes(container, codigoSup, codigoVend) {
 function pedidosTable(lista, containerId) {
   if (!lista.length) return `<p class="empty-state">Nenhum pedido nesta aba.</p>`;
   const rows = lista.map(p => {
-    const searchText = [p.numeroPedidoWinthor, p.numeroPedidoClube, p.codigoRCA, p.cnpj, p.codCliente, p.razaoSocial].join(" ").toLowerCase();
+    const searchText = [p.numeroPedidoWinthor, p.numeroPedidoClube, p.numeroNotaFiscal, p.codigoRCA, p.cnpj, p.codCliente, p.razaoSocial].join(" ").toLowerCase();
     return `<tr data-search="${esc(searchText)}">
     <td>${fmtDate(p.data)}</td>
     <td>${esc(p.numeroPedidoWinthor)}</td>
     <td>${esc(p.numeroPedidoClube)}</td>
+    <td>${esc(p.numeroNotaFiscal)}</td>
     <td>${esc(p.codigoRCA)}</td>
     <td>${esc(p.codCliente)}</td>
     <td>${esc(p.cnpj)}</td>
@@ -430,7 +432,7 @@ function pedidosTable(lista, containerId) {
   </tr>`;
   }).join("");
   return `${searchBoxHtml(containerId)}<div class="table-scroll"><table id="exportTable"><thead><tr>
-    <th>Data digitação</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
+    <th>Data digitação</th><th>Pedido Winthor</th><th>Pedido Clube</th><th>Nota Fiscal</th><th>Cód. RCA</th><th>Cód. Cliente</th><th>CNPJ</th><th>Razão Social</th><th>Status</th><th class="num">Valor</th>
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 

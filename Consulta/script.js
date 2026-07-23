@@ -64,7 +64,7 @@ function render(termo) {
     return;
   }
   const matches = DATA.consultaPedidos.filter(p => {
-    const alvo = [p.numeroPedidoWinthor, p.numeroPedidoClube, p.cnpj, p.codCliente, p.codigoRCA, p.supervisor, p.razaoSocial, p.vendedor]
+    const alvo = [p.numeroPedidoWinthor, p.numeroPedidoClube, p.numeroNotaFiscal, p.cnpj, p.codCliente, p.codigoRCA, p.supervisor, p.razaoSocial, p.vendedor]
       .join(" ").toLowerCase();
     return alvo.includes(termo);
   });
@@ -133,6 +133,7 @@ function pedidoCardHtml(p) {
       ${campo("Data", fmtDate(p.data))}
       ${campo("Pedido Winthor", p.numeroPedidoWinthor)}
       ${campo("Pedido Clube", p.numeroPedidoClube)}
+      ${campo("Nota Fiscal", p.numeroNotaFiscal)}
       ${campo("Cód. RCA", p.codigoRCA)}
       ${campo("Cód. Cliente", p.codCliente)}
       ${campo("CNPJ", p.cnpj)}

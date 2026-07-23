@@ -160,7 +160,7 @@ function projetadoFaturamento(agg) {
   `;
   return `
     <div class="projetado-row">
-      <div class="projetado-row-head"><span>Faturamento</span><b>${fmtBRL2(atual + pendente)} <span class="projetado-vs-meta">projetado / meta ${fmtBRL2(meta)}</span></b></div>
+      <div class="projetado-row-head"><span>Faturamento</span><b>${fmtBRL2(atual + pendente)} <span class="projetado-vs-meta">Fat + A Fat / meta ${fmtBRL2(meta)}</span></b></div>
       ${barraComMarcador(fills, pctMeta)}
       <div class="projetado-legenda">
         <span><i class="dot faturado"></i>Já faturado: ${fmtBRL2(atual)}</span>
@@ -176,7 +176,7 @@ function projetadoPositivacao(agg) {
   const fills = `<div class="projetado-bar-fill realizado" style="flex:${Math.max(atual, 0.0001)} 0 0"></div>`;
   return `
     <div class="projetado-row">
-      <div class="projetado-row-head"><span>Positivação</span><b>${fmtInt(atual)} clientes <span class="projetado-vs-meta">projetado / meta ${fmtInt(meta)}</span></b></div>
+      <div class="projetado-row-head"><span>Positivação</span><b>${fmtInt(atual)} clientes <span class="projetado-vs-meta">Fat + A Fat / meta ${fmtInt(meta)}</span></b></div>
       ${barraComMarcador(fills, pctMeta)}
       <div class="projetado-legenda">
         <span><i class="dot realizado"></i>Clientes positivados: ${fmtInt(atual)} (${fmtInt(agg.positivacaoFaturado)} com nota já faturada, ${fmtInt(agg.positivacaoAFaturar)} com pedido ainda a faturar)</span>
@@ -186,7 +186,7 @@ function projetadoPositivacao(agg) {
 }
 function projetadoSection(agg) {
   return `
-    <div class="section-title"><span class="bar"></span>Projetado — como estamos hoje</div>
+    <div class="section-title"><span class="bar"></span>Fat + A Fat — como estamos hoje</div>
     <div class="card">
       ${projetadoFaturamento(agg)}
       ${projetadoPositivacao(agg)}
@@ -232,7 +232,7 @@ function fornecedorPaceGrid(agg) {
     return `<div class="pace-card">
       <div class="pf-name"><span class="pf-dot" style="background:${f.cor}"></span>${esc(f.nome)}</div>
       <div class="pace-row"><span>Meta de faturamento</span><b>${fmtBRL(b.metaFaturamento)}</b></div>
-      <div class="pace-row"><span>Projetado (faturado + a faturar)</span><b>${fmtBRL(b.faturadoLiquido + b.aFaturar)}</b></div>
+      <div class="pace-row"><span>Fat + A Fat</span><b>${fmtBRL(b.faturadoLiquido + b.aFaturar)}</b></div>
       <div class="pace-row falta"><span>Falta p/ bater meta</span><b>${pf.bateu ? "Meta batida ✓" : fmtBRL(pf.falta)}</b></div>
       <div class="pace-need">${fmtBRL(pf.necessarioDia)}<span class="pace-need-sub"> /dia útil necessário</span></div>
       <div class="pace-row"><span>Positivação necessária</span><b>${fmtInt(pp.necessarioDia)} clientes/dia útil</b></div>
@@ -291,7 +291,7 @@ function renderVendedor(view, sup, vend) {
     <div class="card">${fornecedorPaceGrid(vend.geral)}</div>
     <div class="card" style="margin-top:14px">
       <div class="table-scroll"><table id="exportTable"><thead><tr>
-        <th>Indústria</th><th class="num">Meta</th><th class="num">Projetado</th><th class="num">Falta p/ bater meta</th>
+        <th>Indústria</th><th class="num">Meta</th><th class="num">Fat + A Fat</th><th class="num">Falta p/ bater meta</th>
         <th class="num">R$ necessário/dia útil</th><th class="num">Clientes necessário/dia útil</th>
       </tr></thead><tbody>
         ${DATA.fornecedores.map(f => {
