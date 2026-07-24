@@ -485,12 +485,19 @@ function Add-Linha($agg, $linha) {
 # Positivacao = clientes com venda no periodo QUE NAO tiveram nenhuma devolucao no mesmo
 # escopo (fornecedor ou geral) - decisao explicita do usuario 2026-07-21: uma devolucao,
 # mesmo parcial, tira o cliente da contagem de positivados (nao so quando o liquido fica <=0).
-# Quebrado em faturado/a-faturar (um cliente pode entrar nos dois se tiver pedidos nos dois
-# status) para o usuario ver a composicao, nao so o total.
+# Quebrado em faturado/a-faturar para o usuario ver a composicao - mas um cliente que ja tem
+# pedido FATURADO nunca conta de novo em A Faturar (regra universal de dedup, mesma aplicada
+# em Varejo/VJ Ingleza/Arcor 2026-07-24), senao F+AF soma mais que o total Realizado.
 function Count-Set($set, $excluir) {
     $count = 0
     foreach ($cnpj in $set) { if (-not $excluir.Contains($cnpj)) { $count++ } }
     return $count
+}
+function Union-Set($a, $b) {
+    $u = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($x in $a) { [void]$u.Add($x) }
+    foreach ($x in $b) { [void]$u.Add($x) }
+    return ,$u
 }
 function Count-Positivados($agg) { return Count-Set $agg.clientesVenda $agg.clientesDevolucao }
 function ConvertTo-JsonAgg($agg) {
@@ -503,7 +510,7 @@ function ConvertTo-JsonAgg($agg) {
         bonificacao = [Math]::Round($agg.bonificacao,2)
         positivacaoRealizado = Count-Positivados $agg
         positivacaoFaturado = Count-Set $agg.clientesFaturado $agg.clientesDevolucao
-        positivacaoAFaturar = Count-Set $agg.clientesAFaturar $agg.clientesDevolucao
+        positivacaoAFaturar = Count-Set $agg.clientesAFaturar (Union-Set $agg.clientesDevolucao $agg.clientesFaturado)
         clientesComDevolucao = $agg.clientesDevolucao.Count
         porFornecedor = [ordered]@{}
     }
@@ -518,7 +525,7 @@ function ConvertTo-JsonAgg($agg) {
             bonificacao = [Math]::Round($b.bonificacao,2)
             positivacaoRealizado = Count-Positivados $b
             positivacaoFaturado = Count-Set $b.clientesFaturado $b.clientesDevolucao
-            positivacaoAFaturar = Count-Set $b.clientesAFaturar $b.clientesDevolucao
+            positivacaoAFaturar = Count-Set $b.clientesAFaturar (Union-Set $b.clientesDevolucao $b.clientesFaturado)
             clientesComDevolucao = $b.clientesDevolucao.Count
         }
     }
