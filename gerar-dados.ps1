@@ -186,6 +186,11 @@ $residuaisInterno = @("63","64","68","87")
 # BLOQUEADO/DEVOLVIDO). Colunas deslocadas em relacao a 8014: tem "FILIAL" a mais no
 # inicio (+1) e "STATUS BLOQUEIO" a mais entre ORIGEM_PEDIDO e COD.VENDEDOR (+1), e
 # CAIXAS VENDIDAS/UNIDADES VENDIDAS vem trocadas de ordem entre si.
+# 2026-07-24: export do mes vigente ganhou uma nova coluna "FORNECEDOR" logo apos
+# FILIAL (col 2), deslocando tudo mais uma casa (+1) so neste arquivo. Os arquivos
+# historicos em Bases/Armazenamento (8022 - <Mes>.xls) NAO tem essa coluna - $arrH
+# usa os indices antigos, $arr8 usa os novos. Confirmar layout de cada arquivo
+# separadamente na proxima mudanca, nao assumir que os dois sempre casam.
 # ---------------------------------------------------------------------------
 Write-Host "Lendo base 8022 - Geral (pode demorar)..."
 $wb8 = $excel.Workbooks.Open((Resolve-BaseFile "8022 - geral.xls"), $null, $true)
@@ -197,7 +202,7 @@ Write-Host "  $($rows8-1) linhas"
 # Descobre o mes vigente (maior data encontrada) para filtrar a janela movel do export
 $maxDate = [datetime]::MinValue
 for ($r = 2; $r -le $rows8; $r++) {
-    $v = $arr8[$r,2]
+    $v = $arr8[$r,3]
     if ($v -is [double]) {
         $d = [datetime]::FromOADate($v)
         if ($d -gt $maxDate) { $maxDate = $d }
@@ -214,8 +219,8 @@ Write-Host "  Periodo vigente: $($primeiroDiaMes.ToString('MM/yyyy')) (dados ate
 Write-Host "Resolvendo supervisor de cada vendedor (votacao por maioria como fallback)..."
 $votos = @{}
 for ($r = 2; $r -le $rows8; $r++) {
-    $cvv = $arr8[$r,17]
-    $css = $arr8[$r,19]
+    $cvv = $arr8[$r,18]
+    $css = $arr8[$r,20]
     if (-not ($cvv -is [double]) -or -not ($css -is [double])) { continue }
     $cv = "$([int]$cvv)"
     $cs = "$([int]$css)"
@@ -244,27 +249,27 @@ Write-Host "Processando linhas..."
 $linhas = New-Object System.Collections.Generic.List[object]
 
 for ($r = 2; $r -le $rows8; $r++) {
-    $vData = $arr8[$r,2]
+    $vData = $arr8[$r,3]
     if (-not ($vData -is [double])) { continue }
     $data = [datetime]::FromOADate($vData)
     if ($data -lt $primeiroDiaMes -or $data -gt $ultimoDiaMes) { continue }
 
-    $codCliente = "$($arr8[$r,3])"
-    $nomeCliente = "$($arr8[$r,4])"
-    $cnpj = "$($arr8[$r,5])"
-    $segmento = "$($arr8[$r,6])"
-    $numPedRCA = "$($arr8[$r,11])"
-    $numPedWinthor = "$($arr8[$r,10])"
-    $numeroNF = "$($arr8[$r,13])"
-    $statusFat = Remove-Diacritics("$($arr8[$r,15])").ToUpper().Trim()
-    $statusBloqueio = Remove-Diacritics("$($arr8[$r,16])").ToUpper().Trim()
-    $codVendedor = "$([int]$arr8[$r,17])"
-    $nomeVendedor = "$($arr8[$r,18])"
-    $codprod = "$($arr8[$r,24])"
-    $descProduto = "$($arr8[$r,25])"
-    $unidVendidas = Parse-ValorBR $arr8[$r,27]
-    $valor = Parse-ValorBR $arr8[$r,31]
-    $tipoVenda = Remove-Diacritics("$($arr8[$r,32])").ToUpper().Trim()
+    $codCliente = "$($arr8[$r,4])"
+    $nomeCliente = "$($arr8[$r,5])"
+    $cnpj = "$($arr8[$r,6])"
+    $segmento = "$($arr8[$r,7])"
+    $numPedRCA = "$($arr8[$r,12])"
+    $numPedWinthor = "$($arr8[$r,11])"
+    $numeroNF = "$($arr8[$r,14])"
+    $statusFat = Remove-Diacritics("$($arr8[$r,16])").ToUpper().Trim()
+    $statusBloqueio = Remove-Diacritics("$($arr8[$r,17])").ToUpper().Trim()
+    $codVendedor = "$([int]$arr8[$r,18])"
+    $nomeVendedor = "$($arr8[$r,19])"
+    $codprod = "$($arr8[$r,25])"
+    $descProduto = "$($arr8[$r,26])"
+    $unidVendidas = Parse-ValorBR $arr8[$r,28]
+    $valor = Parse-ValorBR $arr8[$r,32]
+    $tipoVenda = Remove-Diacritics("$($arr8[$r,33])").ToUpper().Trim()
 
     # Bucketing de vendas/devolucao/corte usa o supervisor DA PROPRIA LINHA (so com os folds
     # numericos ja conhecidos: Denilson->Washington, Rodrigo Stelleo->Rodrigo) - nao o
@@ -276,7 +281,7 @@ for ($r = 2; $r -le $rows8; $r++) {
     # o que o dashboard soma. O canonico (vendedorSupervisorFinal) continua existindo e e usado
     # só para decidir quem recebe a META do vendedor (evita o double-count que motivou criar
     # o canonico originalmente) - ver o loop de metas mais abaixo.
-    $codSupervisorRawVal = $arr8[$r,19]
+    $codSupervisorRawVal = $arr8[$r,20]
     $codSupervisor = "OUTROS"
     if ($codSupervisorRawVal -is [double]) {
         $csFolded = "$([int]$codSupervisorRawVal)"
